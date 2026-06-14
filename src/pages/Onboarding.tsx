@@ -126,8 +126,12 @@ export default function Onboarding() {
                 id="onboard-email-input"
                 type="email"
                 value={email}
-                disabled
-                className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-400 cursor-not-allowed font-mono"
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={!!user?.email}
+                className={`w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:border-primary/40 ${
+                  user?.email ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50 text-slate-700'
+                }`}
+                placeholder="name@email.com"
               />
             </div>
 

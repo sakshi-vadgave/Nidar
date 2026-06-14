@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,8 +12,9 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'fire
 import { auth } from '../firebase';
 
 export default function Login() {
-  const { signInWithGoogle, signInWithGuestMock, user } = useApp();
+  const { signInWithGoogle, signInWithGuestMock, user, needsOnboarding } = useApp();
   const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState<'google' | 'guest' | 'email' | 'phone'>('google');
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
@@ -23,6 +24,17 @@ export default function Login() {
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Handle redirect if authenticated
+  useEffect(() => {
+    if (user && !loading) {
+      if (needsOnboarding) {
+        navigate('/onboarding', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [user, loading, needsOnboarding, navigate]);
 
   const handleGoogleLogin = async () => {
     setErrorMessage('');
@@ -97,13 +109,24 @@ export default function Login() {
       return;
     }
     setErrorMessage('Simulated phone verify successful! Redirecting...');
-    // Real auth is backed by Google Sign-In principally, we can skip with mock trigger
     setLoading(true);
     setTimeout(async () => {
-      // In professional prototypes, if they verify simulated phone, we authorize them using standard mock session
-      // For high persistence, we encourage Google Sign-In for real Firestore writes
-      await signInWithGoogle();
-      setLoading(false);
+      try {
+        const mockPhoneUser = {
+          uid: 'guest_phone_' + Math.random().toString(36).substring(2, 11),
+          email: '', // empty initially, can be populated during onboarding
+          phoneNumber: phoneNum || '+1 555-0199',
+          displayName: 'Phone Citizen',
+          emailVerified: true,
+          photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256&h=256',
+          isAnonymous: true
+        };
+        await signInWithGuestMock(mockPhoneUser);
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Phone Sandbox initiation failed.');
+      } finally {
+        setLoading(false);
+      }
     }, 1500);
   };
 

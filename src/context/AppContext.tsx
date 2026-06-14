@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { onAuthStateChanged, User, signOut, signInWithPopup } from 'firebase/auth';
 import {
   doc,
@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db, googleProvider, OperationType, handleFirestoreError } from '../firebase';
 import { UserProfile, Guardian, EmergencyContact, AlertLog, Journey, UserSetting, NotificationItem } from '../types';
+import { reverseGeocodeNominatim } from '../utils/geocoding';
 
 interface AppContextType {
   user: User | null;
@@ -206,6 +207,104 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [simulateDeviation, setSimulateDeviation] = useState(false);
   const [deviationDetected, setDeviationDetected] = useState(false);
 
+  // Audio refs and functions for emergency SOS wailing siren sound
+  const emergencyAudioCtxRef = useRef<AudioContext | null>(null);
+  const emergencyOscRef = useRef<OscillatorNode | null>(null);
+  const emergencyOsc2Ref = useRef<OscillatorNode | null>(null);
+  const emergencyGainRef = useRef<GainNode | null>(null);
+  const emergencyLfoRef = useRef<OscillatorNode | null>(null);
+
+  const startEmergencySiren = () => {
+    if (emergencyAudioCtxRef.current) return;
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      emergencyAudioCtxRef.current = ctx;
+
+      const osc = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(600, ctx.currentTime);
+
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(605, ctx.currentTime);
+
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(2.5, ctx.currentTime); // 2.5 oscillations per second
+      lfoGain.gain.setValueAtTime(150, ctx.currentTime); // sweep range
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+      lfoGain.connect(osc2.frequency);
+
+      osc.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + 0.1);
+
+      lfo.start();
+      osc.start();
+      osc2.start();
+
+      emergencyLfoRef.current = lfo;
+      emergencyOscRef.current = osc;
+      emergencyOsc2Ref.current = osc2;
+      emergencyGainRef.current = gain;
+    } catch (e) {
+      console.warn('Web Audio Siren Sound could not be initialized:', e);
+    }
+  };
+
+  const stopEmergencySiren = () => {
+    if (emergencyGainRef.current && emergencyAudioCtxRef.current) {
+      try {
+        const ctx = emergencyAudioCtxRef.current;
+        const gain = emergencyGainRef.current;
+        const lfo = emergencyLfoRef.current;
+        const osc = emergencyOscRef.current;
+        const osc2 = emergencyOsc2Ref.current;
+
+        gain.gain.cancelScheduledValues(ctx.currentTime);
+        gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+        setTimeout(() => {
+          try {
+            lfo?.stop();
+            osc?.stop();
+            osc2?.stop();
+            ctx?.close();
+          } catch (_) {}
+        }, 120);
+      } catch (err) {
+        console.error('Error stopping emergency audio signal:', err);
+      }
+      emergencyLfoRef.current = null;
+      emergencyOscRef.current = null;
+      emergencyOsc2Ref.current = null;
+      emergencyGainRef.current = null;
+      emergencyAudioCtxRef.current = null;
+    }
+  };
+
+  // Automatically start siren on activeSOS change and clean up on unmount or resolution
+  useEffect(() => {
+    if (activeSOS && activeSOS.status === 'active') {
+      startEmergencySiren();
+    } else {
+      stopEmergencySiren();
+    }
+    return () => {
+      stopEmergencySiren();
+    };
+  }, [activeSOS]);
+
   const syncOfflineQueue = async () => {
     try {
       const offlineQueueStr = localStorage.getItem('nidar_offline_positions');
@@ -262,40 +361,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Reverse Geocoding Helper
   const reverseGeocode = async (lat: number, lng: number) => {
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'nidar-safety-applet/1.0'
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const addr = data.address || {};
-        return {
-          street: addr.road || addr.suburb || `Latitude ${lat.toFixed(5)}`,
-          area: addr.neighbourhood || addr.suburb || `Longitude ${lng.toFixed(5)}`,
-          city: addr.city || addr.town || addr.village || `Telemetry Verified`,
-          district: addr.county || addr.district || `GPS Safe Corridor`,
-          state: addr.state || `Signal Sync`,
-          country: addr.country || `Active Satellite`,
-          pincode: addr.postcode || `LIVE`
-        };
-      }
-    } catch (e) {
-      console.warn('Network geocoding failed, using deterministic offset geocoder');
-    }
-
-    // High fidelity deterministic coordinate address geocoder fallback
-    return {
-      street: `Latitude ${lat.toFixed(5)}`,
-      area: `Longitude ${lng.toFixed(5)}`,
-      city: `Telemetry Verified`,
-      district: `GPS Safe Corridor`,
-      state: `Signal Sync`,
-      country: `Active Satellite`,
-      pincode: `LIVE`
-    };
+    return await reverseGeocodeNominatim(lat, lng);
   };
 
   // Real IP Geolocation fallback when hardware/browser sensor fails or is sandboxed/blocked
@@ -1009,6 +1075,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (navigator.vibrate) {
       navigator.vibrate([200, 100, 200, 100, 500]);
     }
+
+    // Play immediate emergency siren sound to guarantee browser autoplay permission
+    startEmergencySiren();
 
     // 2. Gather current coordinates immediately to provide real-time latency optimization
     const instantId = 'alert_' + Date.now();

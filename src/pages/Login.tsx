@@ -12,9 +12,9 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'fire
 import { auth } from '../firebase';
 
 export default function Login() {
-  const { signInWithGoogle, user } = useApp();
+  const { signInWithGoogle, signInWithGuestMock, user } = useApp();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'google' | 'email' | 'phone'>('google');
+  const [activeTab, setActiveTab] = useState<'google' | 'guest' | 'email' | 'phone'>('google');
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,6 +31,26 @@ export default function Login() {
       // AppContext will trigger redirect to onboarding/dashboard automatically
     } catch (err: any) {
       setErrorMessage(err.message || 'Google Authentication failed.');
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setErrorMessage('');
+    setLoading(true);
+    try {
+      const mockUser = {
+        uid: 'guest_' + Math.random().toString(36).substring(2, 11),
+        email: 'guest@nidar-safety.com',
+        displayName: 'Guest Citizen',
+        emailVerified: true,
+        photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256&h=256',
+        isAnonymous: true
+      };
+      await signInWithGuestMock(mockUser);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Guest Sandbox session initiation failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -107,8 +127,8 @@ export default function Login() {
         </div>
 
         {/* Tab Selection Row */}
-        <div id="auth-tabbar" className="flex border-b border-slate-150 py-1 bg-slate-50 rounded-xl p-1">
-          {(['google', 'email', 'phone'] as const).map((tab) => (
+        <div id="auth-tabbar" className="flex flex-wrap border-b border-slate-150 py-1 bg-slate-50 rounded-xl p-1 gap-0.5">
+          {(['google', 'guest', 'email', 'phone'] as const).map((tab) => (
             <button
               id={`auth-tab-${tab}`}
               key={tab}
@@ -116,13 +136,13 @@ export default function Login() {
                 setActiveTab(tab);
                 setErrorMessage('');
               }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg capitalize tracking-wide transition-all ${
+              className={`flex-1 min-w-[70px] py-2 text-xs font-semibold rounded-lg capitalize tracking-wide transition-all ${
                 activeTab === tab
                   ? 'bg-white shadow text-slate-900 border border-slate-100'
                   : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              {tab}
+              {tab === 'guest' ? 'Guest/Demo' : tab}
             </button>
           ))}
         </div>
@@ -146,7 +166,7 @@ export default function Login() {
                 className="space-y-6 flex flex-col items-center justify-center py-6"
               >
                 <p className="text-center text-xs text-slate-500 max-w-xs font-medium leading-relaxed">
-                  Sign in instantly using your Google credentials. Full profile details will sync securely to your Cloud database.
+                  Sign in instantly using your Google credentials.
                 </p>
                 <button
                   id="google-signin-btn"
@@ -162,6 +182,35 @@ export default function Login() {
                   </svg>
                   <span>Sign In with Google</span>
                 </button>
+                <p className="text-[10px] text-slate-400 text-center px-4 leading-normal">
+                  ⚠️ If Google popups are blocked inside this sandboxed container, please select the <strong className="text-indigo-600 font-semibold cursor-pointer" onClick={() => setActiveTab('guest')}>Guest/Demo</strong> tab to test all safety systems instantly.
+                </p>
+              </motion.div>
+            )}
+
+            {activeTab === 'guest' && (
+              <motion.div
+                key="guest-pane"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-6 flex flex-col items-center justify-center py-6"
+              >
+                <p className="text-center text-xs text-slate-500 max-w-xs font-medium leading-relaxed">
+                  Bypass pops and Firestore security rules. Launch a high-fidelity sandbox session with robust local-storage session state.
+                </p>
+                <button
+                  id="sandbox-guest-btn"
+                  onClick={handleGuestLogin}
+                  disabled={loading}
+                  className="w-full flex justify-center items-center space-x-3 py-3 border border-emerald-200 rounded-2xl bg-emerald-50 hover:bg-emerald-100 active:scale-98 font-semibold text-emerald-800 shadow-sm transition-all shadow-emerald-100/50"
+                >
+                  <Shield className="w-5 h-5 text-emerald-600 fill-emerald-600/10" />
+                  <span>Launch Guest Sandbox Session</span>
+                </button>
+                <p className="text-[10px] text-slate-400 text-center px-4 leading-normal bg-emerald-50/40 p-2.5 rounded-xl border border-emerald-100/50">
+                  ⚡ <strong>100% Secure Sandbox Mode:</strong> Real-time journey mapping, SOS dispatcher alarms, notifications feed, and priority guardian lists all remain persistent on your device.
+                </p>
               </motion.div>
             )}
 

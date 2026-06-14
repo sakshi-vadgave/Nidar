@@ -57,6 +57,7 @@ interface AppContextType {
   startJourney: (destinationName: string, eta: string, startLocation: { lat: number; lng: number }) => Promise<void>;
   stopJourney: (journeyId: string, success: boolean) => Promise<void>;
   setFakeCallActive: (active: boolean) => void;
+  signInWithGuestMock: (guestUser: any) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -127,8 +128,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Monitor Authentication state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
         // Fetch User Profile
         const profilePath = `users/${currentUser.uid}`;
         try {
@@ -145,13 +146,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setNeedsOnboarding(true); // Default to on-boarding
         }
       } else {
-        setProfile(null);
-        setGuardians([]);
-        setContacts([]);
-        setAlerts([]);
-        setJourneys([]);
-        setNotifications([]);
-        setNeedsOnboarding(false);
+        // Fallback check for simulated guest user in localStorage
+        const storedGuest = localStorage.getItem('nidar_guest_user');
+        if (storedGuest) {
+          const guestUser = JSON.parse(storedGuest);
+          setUser(guestUser);
+          const savedProfile = localStorage.getItem('nidar_guest_profile');
+          if (savedProfile) {
+            setProfile(JSON.parse(savedProfile));
+            setNeedsOnboarding(false);
+          } else {
+            setNeedsOnboarding(true);
+          }
+        } else {
+          setUser(null);
+          setProfile(null);
+          setGuardians([]);
+          setContacts([]);
+          setAlerts([]);
+          setJourneys([]);
+          setNotifications([]);
+          setNeedsOnboarding(false);
+        }
       }
       setLoading(false);
     });
@@ -159,9 +175,56 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  // Firestore Realtime Sync
+  // Firestore & Guest Realtime Sync
   useEffect(() => {
     if (!user || needsOnboarding) return;
+
+    // Check for Guest / Local Sandbox mode
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const gProfile = localStorage.getItem('nidar_guest_profile');
+      if (gProfile) {
+        setProfile(JSON.parse(gProfile));
+      }
+      
+      const gGuardians = localStorage.getItem('nidar_guest_guardians');
+      setGuardians(gGuardians ? JSON.parse(gGuardians) : [
+        { id: 'g1', name: 'Commander Rex', phone: '+1 555-0101', relationship: 'Security Chief', priorityLevel: 'high' },
+        { id: 'g2', name: 'Dr. Helen Cho', phone: '+1 555-0102', relationship: 'Medical Officer', priorityLevel: 'medium' }
+      ]);
+
+      const gContacts = localStorage.getItem('nidar_guest_contacts');
+      setContacts(gContacts ? JSON.parse(gContacts) : [
+        { id: 'c1', name: 'National Emergency Dispatch', phone: '911', relationship: 'First Responders', priority: 'high' }
+      ]);
+
+      const gAlerts = localStorage.getItem('nidar_guest_alerts');
+      const mockAlerts = gAlerts ? JSON.parse(gAlerts) : [];
+      setAlerts(mockAlerts);
+      const active = mockAlerts.find((a: any) => a.status === 'active');
+      setActiveSOS(active || null);
+
+      const gJourneys = localStorage.getItem('nidar_guest_journeys');
+      const mockJourneys = gJourneys ? JSON.parse(gJourneys) : [];
+      setJourneys(mockJourneys);
+      const activeJ = mockJourneys.find((j: any) => j.status === 'active');
+      setActiveJourney(activeJ || null);
+
+      const gNotifs = localStorage.getItem('nidar_guest_notifications');
+      setNotifications(gNotifs ? JSON.parse(gNotifs) : [
+        { id: 'n1', title: 'Local Sandbox Activated', body: 'Running in secured guest environment.', timestamp: new Date().toISOString(), status: 'unread' }
+      ]);
+
+      const gSettings = localStorage.getItem('nidar_guest_settings');
+      setSettings(gSettings ? JSON.parse(gSettings) : {
+        theme: 'light',
+        audioTriggerEnabled: false,
+        shakeTriggerEnabled: false,
+        pushNotificationsEnabled: true,
+        emergencySOSCountdown: 5,
+      });
+
+      return;
+    }
 
     const userRef = doc(db, 'users', user.uid);
 
@@ -271,12 +334,37 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error('Error signing in with Google Popup:', error);
       setLoading(false);
+      throw error;
     }
+  };
+
+  const signInWithGuestMock = async (guestUser: any) => {
+    setLoading(true);
+    setUser(guestUser);
+    localStorage.setItem('nidar_guest_user', JSON.stringify(guestUser));
+    
+    const savedProfile = localStorage.getItem('nidar_guest_profile');
+    if (savedProfile) {
+      setProfile(JSON.parse(savedProfile));
+      setNeedsOnboarding(false);
+    } else {
+      setProfile(null);
+      setNeedsOnboarding(true);
+    }
+    setLoading(false);
   };
 
   const logOut = async () => {
     try {
       setLoading(true);
+      if (user && (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user')) {
+        localStorage.removeItem('nidar_guest_user');
+        setUser(null);
+        setProfile(null);
+        setNeedsOnboarding(false);
+        setLoading(false);
+        return;
+      }
       await signOut(auth);
     } catch (error) {
       console.error('Error logging out:', error);
@@ -288,6 +376,46 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const completeOnboarding = async (data: Omit<UserProfile, 'uid' | 'createdAt'>) => {
     if (!user) return;
     const path = `users/${user.uid}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const payload = {
+        ...data,
+        uid: user.uid,
+        createdAt: new Date().toISOString(),
+        currentStatus: 'Safe',
+        batteryStatus,
+        networkStatus: networkType,
+        lastLocation: { lat: 19.076, lng: 72.8777 }
+      };
+      
+      localStorage.setItem('nidar_guest_profile', JSON.stringify(payload));
+      setProfile(payload as UserProfile);
+      setNeedsOnboarding(false);
+      
+      // Save settings
+      const defaultSettings = {
+        theme: 'light',
+        audioTriggerEnabled: false,
+        shakeTriggerEnabled: false,
+        pushNotificationsEnabled: true,
+        emergencySOSCountdown: 5,
+      };
+      localStorage.setItem('nidar_guest_settings', JSON.stringify(defaultSettings));
+      setSettings(defaultSettings);
+      
+      // Save welcome notification
+      const initialNotif = {
+        id: 'n_' + Date.now(),
+        title: 'Safety Engine Ready',
+        body: 'NIDAR Safety setup complete. Your guardians will be alerted on any warning trigger.',
+        timestamp: new Date().toISOString(),
+        status: 'unread' as const
+      };
+      localStorage.setItem('nidar_guest_notifications', JSON.stringify([initialNotif]));
+      setNotifications([initialNotif]);
+      return;
+    }
+
     try {
       const payload = {
         ...data,
@@ -320,6 +448,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateProfileData = async (data: Partial<UserProfile>) => {
     if (!user) return;
     const path = `users/${user.uid}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const updatedProfile = { ...profile, ...data, updatedAt: new Date().toISOString() } as UserProfile;
+      localStorage.setItem('nidar_guest_profile', JSON.stringify(updatedProfile));
+      setProfile(updatedProfile);
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid), { ...data, updatedAt: new Date().toISOString() });
     } catch (error) {
@@ -331,16 +467,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const triggerSOS = async (type: string) => {
     if (!user) return;
     const path = `users/${user.uid}/alerts`;
-    try {
-      const alertPayload = {
-        type,
-        status: 'active',
-        timestamp: new Date().toISOString(),
-        location: profile?.lastLocation || { lat: 19.076, lng: 72.8777, address: 'Current Device Location' },
-        battery: batteryStatus,
-        network: networkType,
-      };
+    const alertPayload = {
+      type,
+      status: 'active' as const,
+      timestamp: new Date().toISOString(),
+      location: profile?.lastLocation || { lat: 19.076, lng: 72.8777, address: 'Current Device Location' },
+      battery: batteryStatus,
+      network: networkType,
+    };
 
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const payloadWithId = { id: 'alert_' + Date.now(), ...alertPayload };
+      const list = [payloadWithId, ...alerts];
+      localStorage.setItem('nidar_guest_alerts', JSON.stringify(list));
+      setAlerts(list);
+      setActiveSOS(payloadWithId as AlertLog);
+      
+      const updatedProfile = { ...profile, currentStatus: 'SOS Emergency Triggered' } as UserProfile;
+      localStorage.setItem('nidar_guest_profile', JSON.stringify(updatedProfile));
+      setProfile(updatedProfile);
+      
+      await addNotification('ALERT: Emergency Dispatch Initiated', `An SOS emergency has been triggered. Notifications have been dispatched mapping to Priority Guardians.`);
+      return;
+    }
+
+    try {
       // 1. Add Alert in Firestore
       await addDoc(collection(db, 'users', user.uid, 'alerts'), alertPayload);
 
@@ -357,6 +508,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const resolveSOS = async (alertId: string) => {
     if (!user) return;
     const path = `users/${user.uid}/alerts/${alertId}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = alerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a);
+      localStorage.setItem('nidar_guest_alerts', JSON.stringify(list));
+      setAlerts(list);
+      setActiveSOS(null);
+      
+      const updatedProfile = { ...profile, currentStatus: 'Safe' } as UserProfile;
+      localStorage.setItem('nidar_guest_profile', JSON.stringify(updatedProfile));
+      setProfile(updatedProfile);
+      
+      await addNotification('SOS Threat Resolved', 'Your SOS emergency status has been marked resolved. Your connection is back to safe state.');
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid, 'alerts', alertId), { status: 'resolved' });
       await updateDoc(doc(db, 'users', user.uid), { currentStatus: 'Safe' });
@@ -370,11 +536,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const addGuardian = async (guardian: Omit<Guardian, 'id' | 'createdAt'>) => {
     if (!user) return;
     const path = `users/${user.uid}/guardians`;
+    const payload = {
+      ...guardian,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const payloadWithId = { id: 'g_' + Date.now(), ...payload };
+      const list = [...guardians, payloadWithId];
+      localStorage.setItem('nidar_guest_guardians', JSON.stringify(list));
+      setGuardians(list);
+      await addNotification('Guardian Added', `${guardian.name} is now your secondary protective dynamic contact.`);
+      return;
+    }
+
     try {
-      await addDoc(collection(db, 'users', user.uid, 'guardians'), {
-        ...guardian,
-        createdAt: new Date().toISOString(),
-      });
+      await addDoc(collection(db, 'users', user.uid, 'guardians'), payload);
       await addNotification('Guardian Added', `${guardian.name} is now your secondary protective dynamic contact.`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -384,6 +561,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateGuardian = async (id: string, guardian: Partial<Guardian>) => {
     if (!user) return;
     const path = `users/${user.uid}/guardians/${id}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = guardians.map(g => g.id === id ? { ...g, ...guardian } : g);
+      localStorage.setItem('nidar_guest_guardians', JSON.stringify(list));
+      setGuardians(list);
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid, 'guardians', id), guardian);
     } catch (error) {
@@ -394,6 +579,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const deleteGuardian = async (id: string) => {
     if (!user) return;
     const path = `users/${user.uid}/guardians/${id}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = guardians.filter(g => g.id !== id);
+      localStorage.setItem('nidar_guest_guardians', JSON.stringify(list));
+      setGuardians(list);
+      await addNotification('Guardian Removed', 'A trusted safety contact was deleted from your alerts list.');
+      return;
+    }
+
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'guardians', id));
       await addNotification('Guardian Removed', 'A trusted safety contact was deleted from your alerts list.');
@@ -406,11 +600,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const addContact = async (contact: Omit<EmergencyContact, 'id' | 'createdAt'>) => {
     if (!user) return;
     const path = `users/${user.uid}/emergencyContacts`;
+    const payload = {
+      ...contact,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const payloadWithId = { id: 'c_' + Date.now(), ...payload };
+      const list = [...contacts, payloadWithId];
+      localStorage.setItem('nidar_guest_contacts', JSON.stringify(list));
+      setContacts(list);
+      await addNotification('Safety Contact Registered', `Quick dialing registered support profile for ${contact.name}.`);
+      return;
+    }
+
     try {
-      await addDoc(collection(db, 'users', user.uid, 'emergencyContacts'), {
-        ...contact,
-        createdAt: new Date().toISOString(),
-      });
+      await addDoc(collection(db, 'users', user.uid, 'emergencyContacts'), payload);
       await addNotification('Safety Contact Registered', `Quick dialing registered support profile for ${contact.name}.`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -420,6 +625,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateContact = async (id: string, contact: Partial<EmergencyContact>) => {
     if (!user) return;
     const path = `users/${user.uid}/emergencyContacts/${id}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = contacts.map(c => c.id === id ? { ...c, ...contact } : c);
+      localStorage.setItem('nidar_guest_contacts', JSON.stringify(list));
+      setContacts(list);
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid, 'emergencyContacts', id), contact);
     } catch (error) {
@@ -430,6 +643,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const deleteContact = async (id: string) => {
     if (!user) return;
     const path = `users/${user.uid}/emergencyContacts/${id}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = contacts.filter(c => c.id !== id);
+      localStorage.setItem('nidar_guest_contacts', JSON.stringify(list));
+      setContacts(list);
+      return;
+    }
+
     try {
       await deleteDoc(doc(db, 'users', user.uid, 'emergencyContacts', id));
     } catch (error) {
@@ -441,8 +662,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateSettings = async (newSettings: Partial<UserSetting>) => {
     if (!user) return;
     const path = `users/${user.uid}/settings/userSettings`;
+    const updated = { ...settings, ...newSettings };
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      localStorage.setItem('nidar_guest_settings', JSON.stringify(updated));
+      setSettings(updated);
+      return;
+    }
+
     try {
-      const updated = { ...settings, ...newSettings };
       await setDoc(doc(db, 'users', user.uid, 'settings', 'userSettings'), updated);
       setSettings(updated);
     } catch (error) {
@@ -454,13 +682,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const addNotification = async (title: string, body: string) => {
     if (!user) return;
     const path = `users/${user.uid}/notifications`;
+    const payload = {
+      title,
+      body,
+      timestamp: new Date().toISOString(),
+      status: 'unread' as const,
+    };
+
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const payloadWithId = { id: 'n_' + Date.now(), ...payload };
+      const list = [payloadWithId, ...notifications];
+      localStorage.setItem('nidar_guest_notifications', JSON.stringify(list));
+      setNotifications(list);
+      return;
+    }
+
     try {
-      await addDoc(collection(db, 'users', user.uid, 'notifications'), {
-        title,
-        body,
-        timestamp: new Date().toISOString(),
-        status: 'unread',
-      });
+      await addDoc(collection(db, 'users', user.uid, 'notifications'), payload);
     } catch (error) {
       console.error('Error adding local notification:', error);
     }
@@ -469,6 +707,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const markNotificationRead = async (id: string) => {
     if (!user) return;
     const path = `users/${user.uid}/notifications/${id}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = notifications.map(n => n.id === id ? { ...n, status: 'read' as const } : n);
+      localStorage.setItem('nidar_guest_notifications', JSON.stringify(list));
+      setNotifications(list);
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid, 'notifications', id), { status: 'read' });
     } catch (error) {
@@ -478,22 +724,40 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const clearNotifications = async () => {
     if (!user) return;
-    // For safety prototype simulator, we can empty them locally or delete documents. Let's just track this elegantly.
-    addNotification('Alert Cleanup', 'Notification inbox cleared.');
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      localStorage.setItem('nidar_guest_notifications', JSON.stringify([]));
+      setNotifications([]);
+      await addNotification('Alert Cleanup', 'Notification inbox cleared.');
+      return;
+    }
+
+    await addNotification('Alert Cleanup', 'Notification inbox cleared.');
   };
 
   // Journey Monitoring Operations
   const startJourney = async (destinationName: string, eta: string, startLocation: { lat: number; lng: number }) => {
     if (!user) return;
     const path = `users/${user.uid}/journeys`;
+    const journeyPayload = {
+      destinationName,
+      eta,
+      startLocation,
+      status: 'active' as const,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const payloadWithId = { id: 'j_' + Date.now(), ...journeyPayload };
+      const list = [payloadWithId, ...journeys];
+      localStorage.setItem('nidar_guest_journeys', JSON.stringify(list));
+      setJourneys(list);
+      setActiveJourney(payloadWithId as Journey);
+      await addNotification('Journey Initiated', `Now tracking path safety status to ${destinationName}. Safe guardian ping timer activated.`);
+      return;
+    }
+
     try {
-      const journeyPayload = {
-        destinationName,
-        eta,
-        startLocation,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-      };
       await addDoc(collection(db, 'users', user.uid, 'journeys'), journeyPayload);
       await addNotification('Journey Initiated', `Now tracking path safety status to ${destinationName}. Safe guardian ping timer activated.`);
     } catch (error) {
@@ -504,6 +768,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const stopJourney = async (journeyId: string, success: boolean) => {
     if (!user) return;
     const path = `users/${user.uid}/journeys/${journeyId}`;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      const list = journeys.map(j => j.id === journeyId ? { ...j, status: (success ? 'completed' : 'alert') as any } : j);
+      localStorage.setItem('nidar_guest_journeys', JSON.stringify(list));
+      setJourneys(list);
+      setActiveJourney(null);
+      const alertMsg = success
+        ? 'Journey completed successfully, tracking stopped.'
+        : 'Journey warning flagged! Notification dispatched.';
+      await addNotification(success ? 'Journey Safe End' : 'JOURNEY WARNING FLAGS', alertMsg);
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'users', user.uid, 'journeys', journeyId), {
         status: success ? 'completed' : 'alert',
@@ -555,6 +832,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         startJourney,
         stopJourney,
         setFakeCallActive,
+        signInWithGuestMock,
       }}
     >
       {children}

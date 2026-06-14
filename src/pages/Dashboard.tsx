@@ -29,6 +29,7 @@ import FakeCallOverlay from '../components/FakeCallOverlay';
 export default function Dashboard() {
   const {
     profile,
+    user,
     guardians,
     contacts,
     alerts,
@@ -397,7 +398,7 @@ export default function Dashboard() {
         <div className="space-y-1">
           <p className="text-[10px] font-bold text-[#FF5A7A] tracking-widest uppercase">NIDAR VITALITY</p>
           <h2 className="text-xl font-display font-extrabold text-slate-950 tracking-tight leading-none mt-1">
-            Welcome, <span className="text-[#6366F1]">{profile?.fullName ? profile.fullName.split(' ')[0] : 'Jessica'}</span>
+            Welcome, <span className="text-[#6366F1]">{profile?.fullName ? profile.fullName.split(' ')[0] : (user?.displayName ? user.displayName.split(' ')[0] : 'Resident')}</span>
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-1">You are secure. Sentinel tracking live.</p>
         </div>

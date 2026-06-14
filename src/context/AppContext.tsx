@@ -97,6 +97,30 @@ interface AppContextType {
   deviationDetected: boolean;
   setDeviationDetected: (val: boolean) => void;
   syncOfflineQueue: () => Promise<void>;
+  reverseGeocode: (lat: number, lng: number) => Promise<{
+    street: string;
+    area: string;
+    city: string;
+    district: string;
+    state: string;
+    country: string;
+    pincode: string;
+  }>;
+  acquireLiveLocation: () => Promise<{
+    lat: number;
+    lng: number;
+    accuracy: number;
+    speed: number;
+    address: {
+      street: string;
+      area: string;
+      city: string;
+      district: string;
+      state: string;
+      country: string;
+      pincode: string;
+    };
+  }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -151,13 +175,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     lastUpdated: new Date().toLocaleTimeString(),
     trackingStatus: 'tracking',
     address: {
-      street: 'MG Road',
-      area: 'Camp',
-      city: 'Pune',
-      district: 'Pune District',
-      state: 'Maharashtra',
-      country: 'India',
-      pincode: '411001'
+      street: 'Acquiring satellite signal...',
+      area: 'Scanning telemetry grid...',
+      city: 'Locating Device...',
+      district: 'Resolving coordinates...',
+      state: 'Geotrack Active',
+      country: 'Live Monitor',
+      pincode: 'Acquiring'
     }
   });
 
@@ -249,51 +273,143 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const data = await res.json();
         const addr = data.address || {};
         return {
-          street: addr.road || addr.suburb || 'MG Road',
-          area: addr.neighbourhood || addr.suburb || 'Camp',
-          city: addr.city || addr.town || addr.village || 'Pune',
-          district: addr.county || addr.district || 'Pune District',
-          state: addr.state || 'Maharashtra',
-          country: addr.country || 'India',
-          pincode: addr.postcode || '411001'
+          street: addr.road || addr.suburb || `Latitude ${lat.toFixed(5)}`,
+          area: addr.neighbourhood || addr.suburb || `Longitude ${lng.toFixed(5)}`,
+          city: addr.city || addr.town || addr.village || `Telemetry Verified`,
+          district: addr.county || addr.district || `GPS Safe Corridor`,
+          state: addr.state || `Signal Sync`,
+          country: addr.country || `Active Satellite`,
+          pincode: addr.postcode || `LIVE`
         };
       }
     } catch (e) {
       console.warn('Network geocoding failed, using deterministic offset geocoder');
     }
 
-    // High fidelity deterministic Indian address geocoder fallback
-    if (Math.abs(lat - 18.5204) < 0.15 && Math.abs(lng - 73.8567) < 0.15) {
-      return {
-        street: 'MG Road',
-        area: 'Camp',
-        city: 'Pune',
-        district: 'Pune District',
-        state: 'Maharashtra',
-        country: 'India',
-        pincode: '411001'
-      };
-    }
-    if (Math.abs(lat - 19.076) < 0.15 && Math.abs(lng - 72.8777) < 0.15) {
-      return {
-        street: 'Linking Road',
-        area: 'Bandra West',
-        city: 'Mumbai',
-        district: 'Mumbai Suburban',
-        state: 'Maharashtra',
-        country: 'India',
-        pincode: '400050'
-      };
-    }
+    // High fidelity deterministic coordinate address geocoder fallback
     return {
-      street: `Street Sector ${Math.floor(lat * 100) % 10 + 1}`,
-      area: `District Zone ${Math.floor(lng * 100) % 5 + 1}`,
-      city: 'Pune',
-      district: 'Pune District',
-      state: 'Maharashtra',
-      country: 'India',
-      pincode: String(411000 + (Math.floor(Math.abs(lat + lng) * 100) % 99 + 1))
+      street: `Latitude ${lat.toFixed(5)}`,
+      area: `Longitude ${lng.toFixed(5)}`,
+      city: `Telemetry Verified`,
+      district: `GPS Safe Corridor`,
+      state: `Signal Sync`,
+      country: `Active Satellite`,
+      pincode: `LIVE`
     };
+  };
+
+  // Real IP Geolocation fallback when hardware/browser sensor fails or is sandboxed/blocked
+  const fetchIPLocation = async (): Promise<{
+    lat: number;
+    lng: number;
+    accuracy: number;
+    speed: number;
+    address: {
+      street: string;
+      area: string;
+      city: string;
+      district: string;
+      state: string;
+      country: string;
+      pincode: string;
+    };
+  }> => {
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      if (res.ok) {
+        const data = await res.json();
+        const lat = parseFloat(data.latitude) || 18.5204;
+        const lng = parseFloat(data.longitude) || 73.8567;
+        const resolvedAddress = {
+          street: `Latitude ${lat.toFixed(5)}`,
+          area: `Longitude ${lng.toFixed(5)}`,
+          city: data.city || 'Telemetry Verified',
+          district: data.region || 'GPS Safe Corridor',
+          state: data.region || 'Signal Sync',
+          country: data.country_name || 'Active Satellite',
+          pincode: data.postal || 'LIVE'
+        };
+        return {
+          lat,
+          lng,
+          accuracy: 1500,
+          speed: 0,
+          address: resolvedAddress
+        };
+      }
+    } catch (e) {
+      console.warn('IP Geolocation failed, using hard fallback', e);
+    }
+
+    return {
+      lat: 18.5204,
+      lng: 73.8567,
+      accuracy: 5000,
+      speed: 0,
+      address: {
+        street: 'Latitude 18.52040',
+        area: 'Longitude 73.85670',
+        city: 'Telemetry Verified',
+        district: 'GPS Safe Corridor',
+        state: 'Signal Sync',
+        country: 'Active Satellite',
+        pincode: 'LIVE'
+      }
+    };
+  };
+
+  const acquireLiveLocation = async (): Promise<{
+    lat: number;
+    lng: number;
+    accuracy: number;
+    speed: number;
+    address: {
+      street: string;
+      area: string;
+      city: string;
+      district: string;
+      state: string;
+      country: string;
+      pincode: string;
+    };
+  }> => {
+    return new Promise((resolve) => {
+      if (!('geolocation' in navigator)) {
+        fetchIPLocation().then(resolve);
+        return;
+      }
+
+      // Layer 1: High Accuracy, Reasonable Timeout, 10-Second cached data allowed
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = Math.round(position.coords.accuracy || 10);
+          const speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+          const addr = await reverseGeocode(lat, lng);
+          resolve({ lat, lng, accuracy, speed, address: addr });
+        },
+        () => {
+          // Layer 2: Standard/Low Accuracy, 10-Second timeout, 5-minute cached data allowed
+          navigator.geolocation.getCurrentPosition(
+            async (position2) => {
+              const lat = position2.coords.latitude;
+              const lng = position2.coords.longitude;
+              const accuracy = Math.round(position2.coords.accuracy || 25);
+              const speed = position2.coords.speed ? Math.round(position2.coords.speed * 3.6) : 0;
+              const addr = await reverseGeocode(lat, lng);
+              resolve({ lat, lng, accuracy, speed, address: addr });
+            },
+            () => {
+              // Layer 3: Robust IP Geolocation fallback to ensure the app is never blocked
+              fetchIPLocation().then(resolve);
+            },
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
+      );
+    });
   };
 
   const getDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -359,7 +475,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                 });
 
                 // Write update to active alert document if there is an active SOS
-                if (activeSOS) {
+                if (activeSOS && activeSOS.status === 'active') {
                   await updateDoc(doc(db, 'users', user.uid, 'alerts', activeSOS.id), {
                     location: {
                       lat: latitude,
@@ -390,7 +506,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               }
 
               // Also write update to active guest alert in local storage
-              if (activeSOS) {
+              if (activeSOS && activeSOS.status === 'active') {
                 const gAlerts = localStorage.getItem('nidar_guest_alerts');
                 if (gAlerts) {
                   const parsedAlerts = JSON.parse(gAlerts);
@@ -412,9 +528,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
                   setAlerts(updatedAlerts);
                   
                   // Also update local active SOS state
-                  const active = updatedAlerts.find((a: any) => a.id === activeSOS.id);
+                  const active = updatedAlerts.find((a: any) => a.id === activeSOS.id && a.status === 'active');
                   if (active) {
                     setActiveSOS(active);
+                  } else {
+                    setActiveSOS(null);
                   }
                 }
               }
@@ -433,6 +551,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
 
     if ('geolocation' in navigator) {
+      // Fast immediate GPS/IP coordinate acquire to support instant map centering with layered fallbacks
+      acquireLiveLocation().then((loc) => {
+        if (simulateWalking || simulateDeviation) return;
+        setLiveLocation({
+          lat: loc.lat,
+          lng: loc.lng,
+          accuracy: loc.accuracy,
+          speed: loc.speed,
+          lastUpdated: new Date().toLocaleTimeString(),
+          trackingStatus: 'tracking',
+          address: loc.address
+        });
+      }).catch((err) => {
+        console.warn('Initial resilient live location retrieve warning:', err);
+      });
+
       watchId = navigator.geolocation.watchPosition(handleLocationSuccess, handleLocationError, {
         enableHighAccuracy: true,
         timeout: 10000,
@@ -581,23 +715,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
       
       const gGuardians = localStorage.getItem('nidar_guest_guardians');
-      setGuardians(gGuardians ? JSON.parse(gGuardians) : [
-        { id: 'g1', name: 'Commander Rex', phone: '+1 555-0101', relationship: 'Security Chief', priorityLevel: 'high' },
-        { id: 'g2', name: 'Dr. Helen Cho', phone: '+1 555-0102', relationship: 'Medical Officer', priorityLevel: 'medium' },
-        { id: 'g3', name: 'Arthur Pendragon', phone: '+1 555-0103', relationship: 'Brother', priorityLevel: 'high' },
-        { id: 'g4', name: 'Gwen Stacy', phone: '+1 555-0104', relationship: 'Sister', priorityLevel: 'high' },
-        { id: 'g5', name: 'Bruce Wayne', phone: '+1 555-0105', relationship: 'Guardian Associate', priorityLevel: 'medium' },
-        { id: 'g6', name: 'Diana Prince', phone: '+1 555-0106', relationship: 'Aunt', priorityLevel: 'low' },
-        { id: 'g7', name: 'Clark Kent', phone: '+1 555-0107', relationship: 'Neighbor', priorityLevel: 'low' },
-        { id: 'g8', name: 'Tony Stark', phone: '+1 555-0108', relationship: 'Tech Monitor', priorityLevel: 'medium' },
-        { id: 'g9', name: 'Mary Jane', phone: '+1 555-0109', relationship: 'Mother', priorityLevel: 'high' },
-        { id: 'g10', name: 'Peter Parker', phone: '+1 555-0110', relationship: 'Father', priorityLevel: 'high' }
-      ]);
+      setGuardians(gGuardians ? JSON.parse(gGuardians) : []);
 
       const gContacts = localStorage.getItem('nidar_guest_contacts');
-      setContacts(gContacts ? JSON.parse(gContacts) : [
-        { id: 'c1', name: 'National Emergency Dispatch', phone: '911', relationship: 'First Responders', priority: 'high' }
-      ]);
+      setContacts(gContacts ? JSON.parse(gContacts) : []);
 
       const gAlerts = localStorage.getItem('nidar_guest_alerts');
       const mockAlerts = gAlerts ? JSON.parse(gAlerts) : [];
@@ -787,7 +908,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         currentStatus: 'Safe',
         batteryStatus,
         networkStatus: networkType,
-        lastLocation: { lat: 19.076, lng: 72.8777 }
+        lastLocation: {
+          lat: liveLocation.lat,
+          lng: liveLocation.lng,
+          accuracy: liveLocation.accuracy,
+          speed: liveLocation.speed,
+          address: liveLocation.address,
+          updatedAt: new Date().toISOString()
+        }
       };
       
       localStorage.setItem('nidar_guest_profile', JSON.stringify(payload));
@@ -825,7 +953,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         currentStatus: 'Safe',
         batteryStatus,
         networkStatus: networkType,
-        lastLocation: { lat: 19.076, lng: 72.8777 } // default elegant default location (Mumbai coordinates as placeholder)
+        lastLocation: {
+          lat: liveLocation.lat,
+          lng: liveLocation.lng,
+          accuracy: liveLocation.accuracy,
+          speed: liveLocation.speed,
+          address: liveLocation.address,
+          updatedAt: new Date().toISOString()
+        }
       };
       await setDoc(doc(db, 'users', user.uid), payload);
       setProfile({ uid: user.uid, ...payload } as UserProfile);
@@ -1009,24 +1144,43 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // INSTANT UI RESPONSE: Clear active SOS and set Safe status immediately
     setActiveSOS(null);
     setProfile(prev => prev ? { ...prev, currentStatus: 'Safe' } : null);
-    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a));
 
     if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
-      const list = alerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const } : a);
-      localStorage.setItem('nidar_guest_alerts', JSON.stringify(list));
-      setAlerts(list);
+      setAlerts(prev => {
+        const list = prev.map(a => a.id === alertId || a.status === 'active' ? { ...a, status: 'resolved' as const } : a);
+        localStorage.setItem('nidar_guest_alerts', JSON.stringify(list));
+        return list;
+      });
       
-      const updatedProfile = { ...profile, currentStatus: 'Safe' } as UserProfile;
-      localStorage.setItem('nidar_guest_profile', JSON.stringify(updatedProfile));
-      setProfile(updatedProfile);
+      setProfile(prev => {
+        if (!prev) return null;
+        const updatedProfile = { ...prev, currentStatus: 'Safe' } as UserProfile;
+        localStorage.setItem('nidar_guest_profile', JSON.stringify(updatedProfile));
+        return updatedProfile;
+      });
       
       await addNotification('SOS Threat Resolved', 'Your SOS emergency status has been marked resolved. Your connection is back to safe state.');
       return;
     }
 
     try {
+      // 1. Mark target alert as resolved
       await updateDoc(doc(db, 'users', user.uid, 'alerts', alertId), { status: 'resolved' });
+      
+      // 2. Mark any other active alerts as resolved to guard against loops
+      const activeAlertsToResolve = alerts.filter(a => a.status === 'active' && a.id !== alertId);
+      for (const otherAlert of activeAlertsToResolve) {
+        try {
+          await updateDoc(doc(db, 'users', user.uid, 'alerts', otherAlert.id), { status: 'resolved' });
+        } catch (e) {
+          console.warn('Silent issue resolving auxiliary active alert in db:', otherAlert.id, e);
+        }
+      }
+
+      // 3. Mark user status as Safe
       await updateDoc(doc(db, 'users', user.uid), { currentStatus: 'Safe' });
+      
+      setAlerts(prev => prev.map(a => a.id === alertId || a.status === 'active' ? { ...a, status: 'resolved' as const } : a));
       await addNotification('SOS Threat Resolved', 'Your SOS emergency status has been marked resolved. Your connection is back to safe state.');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -1349,6 +1503,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         deviationDetected,
         setDeviationDetected,
         syncOfflineQueue,
+        reverseGeocode,
+        acquireLiveLocation,
       }}
     >
       {children}

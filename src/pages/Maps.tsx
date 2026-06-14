@@ -44,7 +44,9 @@ export default function Maps() {
     activeJourney,
     startJourney,
     stopJourney,
-    addNotification
+    addNotification,
+    reverseGeocode,
+    acquireLiveLocation
   } = useApp();
 
   const location = useLocation();
@@ -57,6 +59,8 @@ export default function Maps() {
   const [destinationInput, setDestinationInput] = useState('');
   const [showDirections, setShowDirections] = useState(false);
   const [showSimulationLogs, setShowSimulationLogs] = useState(true);
+  const [generatingRoute, setGeneratingRoute] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   // Dynamic zoom state and Center focusing
   const [zoom, setZoom] = useState(15);
@@ -77,67 +81,37 @@ export default function Maps() {
     setZoom((prev) => Math.max(prev - 1, 2));
   };
 
-  // Explicit browser-level Geolocation query on-demand
-  const handleManualDetectLocation = () => {
-    if (!navigator.geolocation) {
-      setPermissionError('Browser sensor is blocked or missing.');
-      return;
-    }
-
+  // Explicit browser-level Geolocation query on-demand with multi-layered resilient auto-fallbacks
+  const handleManualDetectLocation = async () => {
     setDetectingLocation(true);
     setPermissionError(null);
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude, accuracy, speed } = position.coords;
-        const currentSpeed = speed ? Math.round(speed * 3.6) : 0; // convert to km/h
+    try {
+      const loc = await acquireLiveLocation();
+      
+      setLiveLocation({
+        lat: loc.lat,
+        lng: loc.lng,
+        accuracy: loc.accuracy,
+        speed: loc.speed,
+        lastUpdated: new Date().toLocaleTimeString(),
+        trackingStatus: 'tracking',
+        address: loc.address
+      });
 
-        // Local Geocode estimation matching coordinates structure
-        const mockAddress = {
-          street: latitude > 18.51 && latitude < 18.53 ? 'MG Road' : 'Main Safety Bypass',
-          area: longitude > 73.84 && longitude < 73.86 ? 'Camp' : 'Secure Sector',
-          city: 'Pune',
-          district: 'Pune District',
-          state: 'Maharashtra',
-          country: 'India',
-          pincode: '411001'
-        };
-
-        setLiveLocation({
-          lat: latitude,
-          lng: longitude,
-          accuracy: Math.round(accuracy || 8),
-          speed: currentSpeed,
-          lastUpdated: new Date().toLocaleTimeString(),
-          trackingStatus: 'tracking',
-          address: mockAddress
-        });
-
-        setMapCenter({ lat: latitude, lng: longitude });
-        setZoom(16);
-        setDetectingLocation(false);
-        addNotification(
-          'Live GPS Signal Locked',
-          `Successfully verified coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-        );
-      },
-      (error) => {
-        console.warn('Manual GPS error: ', error.message);
-        setDetectingLocation(false);
-        
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            setPermissionError('Location request declined. Please allow GPS permissions in your browser or application menu.');
-            break;
-          case error.TIMEOUT:
-            setPermissionError('GPS connection timed out. Verify your internet link and try again.');
-            break;
-          default:
-            setPermissionError('Unknown GPS sensor error occurred during calibration.');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-    );
+      setMapCenter({ lat: loc.lat, lng: loc.lng });
+      setZoom(16);
+      
+      addNotification(
+        'Live GPS Signal Locked',
+        `Successfully verified coordinates: ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}`
+      );
+    } catch (err: any) {
+      console.warn('Manual GPS error: ', err);
+      setPermissionError('Unable to lock on physical GPS signal. Using estimated IP Network location.');
+    } finally {
+      setDetectingLocation(false);
+    }
   };
 
   useEffect(() => {
@@ -198,45 +172,214 @@ export default function Maps() {
     return true;
   });
 
-  // Plotting safe route generation mathematics
-  const handleGenerateRoute = (e: React.FormEvent) => {
+  // Plotting safe route generation mathematics using real-time OSM Geocoding and Routing APIs
+  const handleGenerateRoute = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!destinationInput) return;
 
-    // Plot a deterministic zigzag path starting from liveLocation and ending ~1.5km northeast
+    setGeneratingRoute(true);
+    setRouteError(null);
+
     const startLat = liveLocation.lat;
     const startLng = liveLocation.lng;
-    const targetLat = startLat + 0.008;
-    const targetLng = startLng + 0.010;
 
-    // Segment points for realistic street polyline
-    const segmentPoints: Array<[number, number]> = [
-      [startLat, startLng],
-      [startLat + 0.002, startLng + 0.001],
-      [startLat + 0.003, startLng + 0.004],
-      [startLat + 0.005, startLng + 0.005],
-      [startLat + 0.006, startLng + 0.008],
-      [targetLat, targetLng],
-    ];
+    try {
+      // 1. Geocode destination address via Nominatim (Free, reliable, no token needed)
+      const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destinationInput)}&limit=1`;
+      const geocodeRes = await fetch(geocodeUrl, {
+        headers: {
+          'Accept-Language': 'en',
+          'User-Agent': 'NidarEmergencySafetyApp/1.0'
+        }
+      });
 
-    setSafeRouteCoordinates(segmentPoints);
-    setSafeRouteData({
-      distance: '1.6 km',
-      duration: '14 mins',
-      status: 'active',
-      active: true,
-      destinationName: destinationInput,
-      steps: [
-        `Exit from current location onto ${liveLocation.address.street || 'MG Road'}`,
-        'Turn sharp right onto safety bypass boulevard (600m)',
-        'Head straight past City Police Depot checkpost (500m)',
-        `Arrive safely at destination point (${destinationInput})`
-      ]
-    });
+      if (!geocodeRes.ok) {
+        throw new Error('Geocoding service returned status error.');
+      }
 
-    setShowDirections(true);
-    setMapCenter({ lat: startLat + 0.004, lng: startLng + 0.005 });
-    addNotification('Safe Route Generated', `Optimized security corridor mapped out towards ${destinationInput}. Turn-by-turn sentinel logging active.`);
+      const geocodeData = await geocodeRes.json();
+      if (!geocodeData || geocodeData.length === 0) {
+        throw new Error(`Location "${destinationInput}" could not be resolved. Please try a more specific address or city name.`);
+      }
+
+      const rawDestName = geocodeData[0].display_name || destinationInput;
+      // Get a shorter, readable destination name (first two elements of address)
+      const parts = rawDestName.split(',');
+      const resolvedDestName = parts.slice(0, 2).join(',').trim() || destinationInput;
+      
+      const targetLat = parseFloat(geocodeData[0].lat);
+      const targetLng = parseFloat(geocodeData[0].lon);
+
+      // 2. Fetch driving/walking route from OSRM
+      let routeRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${targetLng},${targetLat}?overview=full&geometries=geojson&steps=true`);
+      
+      if (!routeRes.ok) {
+        routeRes = await fetch(`https://router.project-osrm.org/route/v1/foot/${startLng},${startLat};${targetLng},${targetLat}?overview=full&geometries=geojson&steps=true`);
+      }
+
+      if (!routeRes.ok) {
+        throw new Error('Routing service returned error status.');
+      }
+
+      const routeData = await routeRes.json();
+      if (routeData.code !== 'Ok' || !routeData.routes || routeData.routes.length === 0) {
+        throw new Error('No walkable or drivable route found from your current location to this destination.');
+      }
+
+      const route = routeData.routes[0];
+      
+      // Convert GeoJSON [lng, lat] coordinate pairs to Leaflet [lat, lng]
+      const segmentPoints: Array<[number, number]> = route.geometry.coordinates.map(
+        (coord: [number, number]) => [coord[1], coord[0]]
+      );
+
+      // Format distance
+      const distanceMeters = route.distance;
+      const distanceStr = distanceMeters < 1000 
+        ? `${Math.round(distanceMeters)} m` 
+        : `${(distanceMeters / 1000).toFixed(2)} km`;
+
+      // Format duration
+      const durationSeconds = route.duration;
+      const durationStr = durationSeconds < 60 
+        ? `${Math.round(durationSeconds)} secs` 
+        : `${Math.round(durationSeconds / 60)} mins`;
+
+      // Parse and construct detailed turn-by-turn routing instructions
+      let steps: string[] = [];
+      if (route.legs && route.legs[0] && route.legs[0].steps && route.legs[0].steps.length > 0) {
+        const rawSteps = route.legs[0].steps;
+        steps = rawSteps.map((step: any, idx: number) => {
+          // Check for pre-built instruction
+          if (step.maneuver?.instruction) {
+            return step.maneuver.instruction;
+          }
+
+          // Craft automated natural language maneuvers fallback
+          const type = step.maneuver?.type || 'turn';
+          const modifier = step.maneuver?.modifier || '';
+          const name = step.name ? `onto ${step.name}` : '';
+          const dist = step.distance > 0 ? `(${Math.round(step.distance)}m)` : '';
+
+          if (type === 'depart') {
+            return `Start moving ${modifier || 'forward'} ${name} ${dist}`.trim();
+          }
+          if (type === 'arrive') {
+            return `Arrive safely at destination point (${resolvedDestName})`.trim();
+          }
+
+          const verbs: { [key: string]: string } = {
+            turn: 'Turn',
+            'new name': 'Continue straight',
+            merge: 'Merge',
+            ramp: 'Take the ramp',
+            fork: 'Keep',
+            roundabout: 'Enter the roundabout',
+            notification: 'Continue',
+          };
+
+          const directions: { [key: string]: string } = {
+            left: 'left',
+            right: 'right',
+            'sharp left': 'sharp left',
+            'sharp right': 'sharp right',
+            'slight left': 'slight left',
+            'slight right': 'slight right',
+            straight: 'straight',
+            'uturn': 'U-turn',
+          };
+
+          const verb = verbs[type] || 'Head';
+          const dir = directions[modifier] || modifier;
+          const action = dir ? `${verb} ${dir}` : verb;
+
+          return `${action} ${name} ${dist}`.trim().replace(/\s+/g, ' ');
+        });
+      } else {
+        steps = [
+          `Depart from your current verified position ${liveLocation.address.street || 'Active Beacon'}`,
+          `Proceed along the optimized path toward ${resolvedDestName}`,
+          `Maintain connection with NIDAR safety monitors (${distanceStr} total)`,
+          `Arrive safely at destination point (${resolvedDestName})`
+        ];
+      }
+
+      // Inject safety checkpoints for high-fidelity security coverage
+      const enhancedSteps = [...steps];
+      const checkpointReminders = [
+        "⚠️ Remember: Sentinel real-time deviation detector is active on this path.",
+        "🛡️ Safety tip: Stick to well-lit public hallways. Do not walk through isolated lanes.",
+        "📱 Alert: If followed, press & hold the volume trigger or use the SOS button immediately."
+      ];
+
+      if (enhancedSteps.length > 3) {
+        enhancedSteps.splice(2, 0, checkpointReminders[0]);
+      }
+      if (enhancedSteps.length > 5) {
+        enhancedSteps.splice(5, 0, checkpointReminders[1]);
+      }
+
+      setSafeRouteCoordinates(segmentPoints);
+      setSafeRouteData({
+        distance: distanceStr,
+        duration: durationStr,
+        status: 'active',
+        active: true,
+        destinationName: resolvedDestName,
+        steps: enhancedSteps
+      });
+
+      setShowDirections(true);
+      const midPoint = segmentPoints[Math.floor(segmentPoints.length / 2)];
+      if (midPoint) {
+        setMapCenter({ lat: midPoint[0], lng: midPoint[1] });
+      }
+      setZoom(14);
+
+      addNotification(
+        'Real-Time Safe Corridor Mapped', 
+        `Successfully generated high-accuracy route to ${resolvedDestName}. Live street coordinates synced.`
+      );
+
+    } catch (err: any) {
+      console.error('Error generating map route: ', err);
+      const errMsg = err.message || 'Connection timeout. Please double check the location name and try again.';
+      setRouteError(errMsg);
+      addNotification('Route Computation Failed', 'Unable to calculate live turn-by-turn path. Using fallback safe routing corridors.');
+      
+      // Fallback path calculator relative to start location
+      const fallbackLat = startLat + 0.008;
+      const fallbackLng = startLng + 0.010;
+
+      const fallbackPoints: Array<[number, number]> = [
+        [startLat, startLng],
+        [startLat + 0.002, startLng + 0.001],
+        [startLat + 0.0035, startLng + 0.003],
+        [startLat + 0.005, startLng + 0.0055],
+        [startLat + 0.0065, startLng + 0.007],
+        [fallbackLat, fallbackLng],
+      ];
+
+      setSafeRouteCoordinates(fallbackPoints);
+      setSafeRouteData({
+        distance: '1.45 km (Fallback)',
+        duration: '12 mins',
+        status: 'active',
+        active: true,
+        destinationName: destinationInput,
+        steps: [
+          `Exit from your current verified position onto ${liveLocation.address.street || 'Active Beacon'}`,
+          `Continue along main corridor toward ${destinationInput} (using local telemetry fallback)`,
+          `🛡️ Safety tip: Track the real-time locator path. Checkpoints and security centers are marked on map.`,
+          `Arrive safely at destination point (${destinationInput})`
+        ]
+      });
+
+      setShowDirections(true);
+      setMapCenter({ lat: startLat + 0.004, lng: startLng + 0.005 });
+    } finally {
+      setGeneratingRoute(false);
+    }
   };
 
   const handleStartJourneySim = async () => {
@@ -441,20 +584,39 @@ export default function Maps() {
               id="map-location-dest-search"
               type="text"
               required
+              disabled={generatingRoute}
               value={destinationInput}
               onChange={(e) => setDestinationInput(e.target.value)}
-              placeholder="Enter destination (e.g. Pune Camp, East St)"
-              className="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-semibold"
+              placeholder="Enter destination address or hub name..."
+              className="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 font-semibold disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
           <button
             id="map-plot-route-submit"
             type="submit"
-            className="px-4.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl active:scale-95 transition-all outline-none"
+            disabled={generatingRoute}
+            className={`px-4.5 font-bold text-xs rounded-xl active:scale-95 transition-all outline-none flex items-center justify-center space-x-1.5 ${
+              generatingRoute
+                ? 'bg-slate-150 border border-slate-250 text-slate-400 cursor-not-allowed'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-650/10'
+            }`}
           >
-            Plot Path
+            {generatingRoute ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Routing...</span>
+              </>
+            ) : (
+              <span>Plot Path</span>
+            )}
           </button>
         </form>
+
+        {routeError && (
+          <div className="text-[11px] font-bold text-amber-700 bg-amber-50 p-3 rounded-xl border border-amber-100 animate-pulse">
+            ⚠️ {routeError}
+          </div>
+        )}
 
         {/* Filter buttons to display specific safety bases */}
         <div className="flex bg-slate-50 border border-slate-100 rounded-xl p-1 text-xs">

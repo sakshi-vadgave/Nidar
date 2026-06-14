@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a security-onboarded user in NIDAR Safety",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "email": { "type": "string" },
+        "profilePhoto": { "type": "string" },
+        "bloodGroup": { "type": "string" },
+        "medicalNotes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "currentStatus": { "type": "string" },
+        "batteryStatus": { "type": "number" },
+        "networkStatus": { "type": "string" },
+        "lastLocation": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "phoneNumber", "email", "bloodGroup"]
+    },
+    "Guardian": {
+      "title": "Guardian",
+      "description": "A trusted guardian linked to user for alerts and SOS propagation",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "relationship": { "type": "string" },
+        "priorityLevel": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "relationship", "priorityLevel"]
+    },
+    "EmergencyContact": {
+      "title": "EmergencyContact",
+      "description": "An emergency contact phone number stored locally or synced for calling",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "relationship": { "type": "string" },
+        "priority": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "relationship", "priority"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "An emergency alarm or SOS event triggered by the user",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "location": { "type": "object" },
+        "battery": { "type": "number" },
+        "network": { "type": "string" }
+      },
+      "required": ["type", "status", "timestamp"]
+    },
+    "Journey": {
+      "title": "Journey",
+      "description": "A journey route being monitored for anomalies or check-ins",
+      "type": "object",
+      "properties": {
+        "destinationName": { "type": "string" },
+        "eta": { "type": "string" },
+        "startLocation": { "type": "object" },
+        "endLocation": { "type": "object" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["destinationName", "eta", "status"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Settings toggles specific to user preferences",
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string" },
+        "audioTriggerEnabled": { "type": "boolean" },
+        "shakeTriggerEnabled": { "type": "boolean" },
+        "pushNotificationsEnabled": { "type": "boolean" },
+        "emergencySOSCountdown": { "type": "number" }
+      },
+      "required": ["theme", "audioTriggerEnabled", "shakeTriggerEnabled"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Individual push notification items triggered or stored",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      },
+      "required": ["title", "body", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Security onboarding collection for core user info"
+    },
+    "/users/{userId}/guardians/{guardianId}": {
+      "schema": "Guardian",
+      "description": "Collection of trusted guardians connected to the user account"
+    },
+    "/users/{userId}/emergencyContacts/{contactId}": {
+      "schema": "EmergencyContact",
+      "description": "Collection of emergency contacts synced with user profiles"
+    },
+    "/users/{userId}/alerts/{alertId}": {
+      "schema": "Alert",
+      "description": "Alert logs and active SOS requests"
+    },
+    "/users/{userId}/journeys/{journeyId}": {
+      "schema": "Journey",
+      "description": "Monitored journeys with tracking points"
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Granular safety and accessibility triggers"
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Notification history logs"
+    }
+  }
+}

@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    // Validate User fields
+    function isValidUser(data) {
+      return ("fullName" in data && data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100)
+          && ("phoneNumber" in data && data.phoneNumber is string && data.phoneNumber.size() >= 3 && data.phoneNumber.size() <= 30)
+          && ("email" in data && data.email is string && data.email.size() >= 3 && data.email.size() <= 100)
+          && ("bloodGroup" in data && data.bloodGroup is string && data.bloodGroup.size() >= 1 && data.bloodGroup.size() <= 15);
+    }
+
+    // Validate Guardian fields
+    function isValidGuardian(data) {
+      return data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+          && data.phone is string && data.phone.size() >= 3 && data.phone.size() <= 30
+          && data.relationship is string && data.relationship.size() >= 2 && data.relationship.size() <= 50
+          && data.priorityLevel is string && (data.priorityLevel == 'high' || data.priorityLevel == 'medium' || data.priorityLevel == 'low');
+    }
+
+    // Validate EmergencyContact fields
+    function isValidEmergencyContact(data) {
+      return data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+          && data.phone is string && data.phone.size() >= 3 && data.phone.size() <= 30
+          && data.relationship is string && data.relationship.size() >= 2 && data.relationship.size() <= 50
+          && data.priority is string && (data.priority == 'high' || data.priority == 'medium' || data.priority == 'low');
+    }
+
+    // Validate Alert fields
+    function isValidAlert(data) {
+      return data.type is string && data.type.size() <= 50
+          && data.status is string && (data.status == 'active' || data.status == 'resolved');
+    }
+
+    // Validate Journey fields
+    function isValidJourney(data) {
+      return data.destinationName is string && data.destinationName.size() >= 2 && data.destinationName.size() <= 200
+          && data.eta is string && data.eta.size() <= 50
+          && data.status is string && (data.status == 'active' || data.status == 'completed' || data.status == 'alert');
+    }
+
+    // Validate Settings fields
+    function isValidSetting(data) {
+      return data.theme is string && (data.theme == 'light' || data.theme == 'dark')
+          && data.audioTriggerEnabled is bool
+          && data.shakeTriggerEnabled is bool;
+    }
+
+    // Validate Notification fields
+    function isValidNotification(data) {
+      return data.title is string && data.title.size() <= 200
+          && data.body is string && data.body.size() <= 1000
+          && data.status is string && (data.status == 'unread' || data.status == 'read');
+    }
+
+    // Match blocks for users collection and nested subcollections
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 50;
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && (!("updatedAt" in request.resource.data) || (request.resource.data.updatedAt is string && request.resource.data.updatedAt.size() <= 50));
+      allow delete: if false;
+
+      // Guardians subcollection
+      match /guardians/{guardianId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(guardianId) && isValidGuardian(request.resource.data);
+        allow update: if isOwner(userId) && isValidGuardian(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Emergency Contacts subcollection
+      match /emergencyContacts/{contactId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(contactId) && isValidEmergencyContact(request.resource.data);
+        allow update: if isOwner(userId) && isValidEmergencyContact(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Alerts subcollection
+      match /alerts/{alertId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(alertId) && isValidAlert(request.resource.data);
+        allow update: if isOwner(userId) && isValidAlert(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Journeys subcollection
+      match /journeys/{journeyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(journeyId) && isValidJourney(request.resource.data);
+        allow update: if isOwner(userId) && isValidJourney(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Settings subcollection
+      match /settings/{settingId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(settingId) && isValidSetting(request.resource.data);
+        allow delete: if false;
+      }
+
+      // Notifications subcollection
+      match /notifications/{notificationId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(notificationId) && isValidNotification(request.resource.data);
+        allow update: if isOwner(userId) && isValidNotification(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

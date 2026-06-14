@@ -13,8 +13,8 @@ export default function Navigation() {
   const currentPath = location.pathname;
 
   const tabs = [
-    { name: 'Home', path: '/', icon: Home },
-    { name: 'Maps', path: '/maps', icon: Map },
+    { name: 'Home', path: '/dashboard', icon: Home },
+    { name: 'Emergency Map', path: '/maps', icon: Map },
     { name: 'Guardians', path: '/guardians', icon: HeartHandshake },
     { name: 'Tools', path: '/tools', icon: ShieldAlert },
     { name: 'Profile', path: '/profile', icon: User },

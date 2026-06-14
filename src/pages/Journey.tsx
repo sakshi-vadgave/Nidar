@@ -9,33 +9,65 @@ import { Compass, MapPin, Play, Square, History, Clock, Navigation, CheckCircle2
 import LeafletMap from '../components/LeafletMap';
 
 export default function JourneyMonitoring() {
-  const { journeys, activeJourney, startJourney, stopJourney, profile, addNotification } = useApp();
+  const {
+    journeys,
+    activeJourney,
+    startJourney,
+    stopJourney,
+    profile,
+    addNotification,
+    liveLocation,
+    safeRouteCoordinates,
+    setSafeRouteCoordinates,
+    simulateWalking,
+    setSimulateWalking,
+    simulateDeviation,
+    setSimulateDeviation,
+    deviationDetected,
+    setDeviationDetected
+  } = useApp();
 
   const [destination, setDestination] = useState('');
   const [eta, setEta] = useState('20 minutes');
 
-  const userCoords = profile?.lastLocation || { lat: 19.076, lng: 72.8777 };
-
-  // Generate safe route coordinates if journey is active
+  // Generate safe route coordinates if journey is active, fall back to default vectors relative to live GPS tracking if none set
   const routePoints: Array<[number, number]> = activeJourney
-    ? [
-        [userCoords.lat, userCoords.lng],
-        [userCoords.lat + 0.001, userCoords.lng + 0.003],
-        [userCoords.lat + 0.003, userCoords.lng + 0.004],
-        [userCoords.lat + 0.005, userCoords.lng + 0.006],
-      ]
+    ? (safeRouteCoordinates.length > 0
+        ? safeRouteCoordinates
+        : [
+            [liveLocation.lat, liveLocation.lng],
+            [liveLocation.lat + 0.002, liveLocation.lng + 0.001],
+            [liveLocation.lat + 0.003, liveLocation.lng + 0.004],
+            [liveLocation.lat + 0.005, liveLocation.lng + 0.006],
+          ])
     : [];
 
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!destination) return;
-    await startJourney(destination, eta, userCoords);
+    
+    // Auto-generate safeRouteCoordinates if empty during quickstart
+    const targetLat = liveLocation.lat + 0.005;
+    const targetLng = liveLocation.lng + 0.006;
+    setSafeRouteCoordinates([
+      [liveLocation.lat, liveLocation.lng],
+      [liveLocation.lat + 0.002, liveLocation.lng + 0.001],
+      [liveLocation.lat + 0.003, liveLocation.lng + 0.004],
+      [targetLat, targetLng]
+    ]);
+
+    await startJourney(destination, eta, { lat: liveLocation.lat, lng: liveLocation.lng });
+    setSimulateWalking(true);
     setDestination('');
   };
 
   const handleStop = async (success: boolean) => {
     if (!activeJourney) return;
     await stopJourney(activeJourney.id, success);
+    setSimulateWalking(false);
+    setSimulateDeviation(false);
+    setDeviationDetected(false);
+    setSafeRouteCoordinates([]);
   };
 
   return (
@@ -71,18 +103,18 @@ export default function JourneyMonitoring() {
 
             <div className="h-60 rounded-2xl overflow-hidden shadow-inner border border-slate-200/60 relative">
               <LeafletMap
-                center={{ lat: userCoords.lat + 0.002, lng: userCoords.lng + 0.003 }}
+                center={{ lat: liveLocation.lat, lng: liveLocation.lng }}
                 markers={[
                   {
-                    lat: userCoords.lat,
-                    lng: userCoords.lng,
+                    lat: liveLocation.lat,
+                    lng: liveLocation.lng,
                     title: 'Current Position',
-                    description: 'Your location being streamed.',
+                    description: `Accuracy: ±${liveLocation.accuracy}m • Speed: ${liveLocation.speed} km/h`,
                     type: 'user',
                   },
                   {
-                    lat: userCoords.lat + 0.005,
-                    lng: userCoords.lng + 0.006,
+                    lat: routePoints.length > 0 ? routePoints[routePoints.length - 1][0] : liveLocation.lat + 0.005,
+                    lng: routePoints.length > 0 ? routePoints[routePoints.length - 1][1] : liveLocation.lng + 0.006,
                     title: activeJourney.destinationName,
                     description: 'Destination endpoint.',
                     type: 'route-endpoint',

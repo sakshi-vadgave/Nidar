@@ -16,7 +16,8 @@ import {
   FolderHeart,
   User,
   LogOut,
-  Sliders as ConfigIcon
+  Sliders as ConfigIcon,
+  Zap
 } from 'lucide-react';
 
 export default function Settings() {
@@ -111,31 +112,21 @@ export default function Settings() {
       {/* Emergency configuration settings */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
         <h3 className="font-bold text-slate-800 text-sm border-b pb-2 flex items-center space-x-1.5">
-          <Clock className="w-4 h-4 text-amber-500" />
-          <span>Emergency Countdowns</span>
+          <Zap className="w-4 h-4 text-rose-500" />
+          <span>SOS Dispatch Policy</span>
         </h3>
 
-        <div className="space-y-2">
-          <div className="flex justify-between items-center text-xs">
-            <span className="font-semibold text-slate-700">SOS Delay buffer</span>
-            <span className="font-mono font-bold text-slate-500 bg-slate-50 border p-1 rounded">
-              {settings.emergencySOSCountdown} seconds
-            </span>
+        <div className="p-4 bg-rose-50/60 rounded-xl border border-rose-100 flex items-start space-x-3 text-left">
+          <div className="p-2 bg-rose-100 text-[#FF5A7A] rounded-xl shrink-0">
+            <Zap className="w-4 h-4 animate-pulse" />
           </div>
-
-          {/* Range Slider for countdown */}
-          <input
-            id="settings-sos-countdown-range"
-            type="range"
-            min={3}
-            max={15}
-            value={settings.emergencySOSCountdown}
-            onChange={(e) => updateSettings({ emergencySOSCountdown: Number(e.target.value) })}
-            className="w-full accent-primary h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer"
-          />
-          <div className="flex justify-between text-[10px] text-slate-400 font-medium">
-            <span>Fast (3s)</span>
-            <span>Buffered (15s)</span>
+          <div className="space-y-1">
+            <p className="text-xs font-black text-rose-700 uppercase tracking-wide">
+              Zero-Delay Mode Active
+            </p>
+            <p className="text-[11px] text-slate-650 leading-relaxed font-semibold">
+              Emergency SOS alerts dispatch immediately when requested. There is absolutely no countdown delay or buffering period. Live telemetry feeds lock instantly.
+            </p>
           </div>
         </div>
       </div>

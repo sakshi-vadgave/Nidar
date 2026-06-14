@@ -46,43 +46,65 @@ function ProtectedLayout() {
     return <Navigate to="/login" replace />;
   }
 
+  if (location.pathname === '/') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   // Force onboarding collection if profile details are blank
   if (needsOnboarding && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
+
+  const isTabRoute = ['/dashboard', '/maps', '/guardians', '/journey', '/tools', '/profile'].includes(location.pathname);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col max-w-lg mx-auto border-x border-slate-100 shadow-xl relative pb-20">
       {/* Header displayed on core routes only */}
       {location.pathname !== '/onboarding' && <Header />}
 
-      {/* Primary viewport framing with elegant Framer Motion transitions */}
+      {/* Primary viewport framing with state-preserving persistent caching */}
       <main className="flex-1 px-5 pt-4">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 12, filter: 'blur(3px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -12, filter: 'blur(3px)' }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-            className="w-full h-full"
-          >
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/maps" element={<Maps />} />
-              <Route path="/guardians" element={<Guardians />} />
-              <Route path="/contacts" element={<EmergencyContacts />} />
-              <Route path="/journey" element={<JourneyMonitoring />} />
-              <Route path="/tools" element={<SafetyTools />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          </motion.div>
-        </AnimatePresence>
+        {isTabRoute ? (
+          <div className="w-full h-full relative">
+            <div className={location.pathname === '/dashboard' ? 'block w-full h-full' : 'hidden'}>
+              <Dashboard />
+            </div>
+            <div className={location.pathname === '/maps' ? 'block w-full h-full' : 'hidden'}>
+              <Maps />
+            </div>
+            <div className={location.pathname === '/guardians' ? 'block w-full h-full' : 'hidden'}>
+              <Guardians />
+            </div>
+            <div className={location.pathname === '/journey' ? 'block w-full h-full' : 'hidden'}>
+              <JourneyMonitoring />
+            </div>
+            <div className={location.pathname === '/tools' ? 'block w-full h-full' : 'hidden'}>
+              <SafetyTools />
+            </div>
+            <div className={location.pathname === '/profile' ? 'block w-full h-full' : 'hidden'}>
+              <Profile />
+            </div>
+          </div>
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 12, filter: 'blur(3px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: -12, filter: 'blur(3px)' }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="w-full h-full"
+            >
+              <Routes>
+                <Route path="/onboarding" element={<Onboarding />} />
+                <Route path="/contacts" element={<EmergencyContacts />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Routes>
+            </motion.div>
+          </AnimatePresence>
+        )}
       </main>
 
       {/* Floating Bottom Navigator displayed on core pages only */}

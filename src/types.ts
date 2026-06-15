@@ -82,3 +82,18 @@ export interface NotificationItem {
   timestamp: string;
   status: 'unread' | 'read';
 }
+
+export interface EvidenceItem {
+  id: string;
+  timestamp: string;
+  location?: {
+    lat: number;
+    lng: number;
+    address?: string;
+  };
+  fileType: 'audio' | 'image' | 'video';
+  fileSize: number;
+  fileUrl: string;
+  storageStatus: string;
+  sosId?: string;
+}

@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion } from 'motion/react';
+import { Link } from 'react-router-dom';
 import {
   User,
   Phone,
@@ -19,7 +20,8 @@ import {
   CheckCircle2,
   Lock,
   HeartCrack,
-  Camera
+  Camera,
+  Database
 } from 'lucide-react';
 
 export default function Profile() {
@@ -241,6 +243,16 @@ export default function Profile() {
               </div>
             </div>
           </div>
+
+          {/* Secure Evidence Vault Fast Shortcut Link */}
+          <Link
+            id="profile-evidence-vault-link"
+            to="/evidence"
+            className="w-full py-4 text-center text-slate-700 hover:bg-slate-50 border border-slate-200/60 bg-white rounded-2xl font-bold text-xs tracking-wider flex items-center justify-center space-x-2 shadow-sm transition-colors cursor-pointer"
+          >
+            <Database className="w-4 h-4 text-indigo-500" />
+            <span>OPEN ENCRYPTED EVIDENCE VAULT</span>
+          </Link>
 
           {/* Active Log Out */}
           <button

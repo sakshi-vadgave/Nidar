@@ -19,9 +19,10 @@ import {
   orderBy,
   getDocs
 } from 'firebase/firestore';
-import { auth, db, googleProvider, OperationType, handleFirestoreError } from '../firebase';
-import { UserProfile, Guardian, EmergencyContact, AlertLog, Journey, UserSetting, NotificationItem } from '../types';
+import { auth, db, storage, googleProvider, OperationType, handleFirestoreError } from '../firebase';
+import { UserProfile, Guardian, EmergencyContact, AlertLog, Journey, UserSetting, NotificationItem, EvidenceItem } from '../types';
 import { reverseGeocodeNominatim } from '../utils/geocoding';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 interface AppContextType {
   user: User | null;
@@ -122,6 +123,13 @@ interface AppContextType {
       pincode: string;
     };
   }>;
+  silentModeEnabled: boolean;
+  toggleSilentMode: () => void;
+  startEmergencySiren: () => void;
+  stopEmergencySiren: () => void;
+  evidence: EvidenceItem[];
+  addEvidence: (fileType: 'audio' | 'image' | 'video', fileDataUrl: string, fileSize: number, sosId?: string) => Promise<void>;
+  deleteEvidence: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -134,6 +142,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [alerts, setAlerts] = useState<AlertLog[]>([]);
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
   const [settings, setSettings] = useState<UserSetting>({
     theme: 'light',
     audioTriggerEnabled: false,
@@ -141,6 +150,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     pushNotificationsEnabled: true,
     emergencySOSCountdown: 5,
   });
+
+  const [silentModeEnabled, setSilentModeEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('nidar_silent_mode') === 'true';
+  });
+
+  const toggleSilentMode = () => {
+    setSilentModeEnabled(prev => {
+      const next = !prev;
+      localStorage.setItem('nidar_silent_mode', String(next));
+      return next;
+    });
+  };
 
   const [loading, setLoading] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
@@ -295,7 +316,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   // Automatically start siren on activeSOS change and clean up on unmount or resolution
   useEffect(() => {
-    if (activeSOS && activeSOS.status === 'active') {
+    if (activeSOS && activeSOS.status === 'active' && !silentModeEnabled) {
       startEmergencySiren();
     } else {
       stopEmergencySiren();
@@ -303,7 +324,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       stopEmergencySiren();
     };
-  }, [activeSOS]);
+  }, [activeSOS, silentModeEnabled]);
 
   // Background Voice Trigger Recognition via Web Speech API
   useEffect(() => {
@@ -989,6 +1010,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       handleFirestoreError(err, OperationType.GET, `users/${user.uid}/settings/userSettings`);
     });
 
+    // 7. Evidence Vault realtime syncing
+    const evidenceCol = collection(db, 'users', user.uid, 'evidence');
+    const qEvidence = query(evidenceCol, orderBy('timestamp', 'desc'));
+    const unsubEvidence = onSnapshot(qEvidence, (snapshot) => {
+      const list: EvidenceItem[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as EvidenceItem);
+      });
+      setEvidence(list);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/evidence`);
+    });
+
     return () => {
       unsubProfile();
       unsubGuardians();
@@ -997,6 +1031,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unsubJourneys();
       unsubNotifs();
       unsubSettings();
+      unsubEvidence();
     };
   }, [user, needsOnboarding]);
 
@@ -1162,7 +1197,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Play immediate emergency siren sound to guarantee browser autoplay permission
-    startEmergencySiren();
+    if (!silentModeEnabled) {
+      startEmergencySiren();
+    }
 
     // 2. Gather current coordinates immediately to provide real-time latency optimization
     const instantId = 'alert_' + Date.now();
@@ -1487,6 +1524,107 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Evidence Vault methods
+  const addEvidence = async (fileType: 'audio' | 'image' | 'video', fileDataUrl: string, fileSize: number, sosId?: string) => {
+    if (!user) return;
+    const timestamp = new Date().toISOString();
+    const evidenceId = `ev_${Date.now()}`;
+    const storageStatus = "Secured in Firebase Cloud Storage";
+    
+    let location: any = null;
+    if (liveLocation && liveLocation.lat && liveLocation.lng) {
+      location = {
+        lat: liveLocation.lat,
+        lng: liveLocation.lng,
+        address: liveLocation.address ? `${liveLocation.address.street}, ${liveLocation.address.area}` : ''
+      };
+    }
+    
+    let fileUrl = fileDataUrl;
+    let finalStatus = storageStatus;
+    
+    // Check if guest/demo mode
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      finalStatus = "Secured in Guest Simulated Vault";
+      try {
+        const payload = {
+          id: evidenceId,
+          timestamp,
+          location,
+          fileType,
+          fileSize,
+          fileUrl,
+          storageStatus: finalStatus,
+          sosId: sosId || activeSOS?.id || ''
+        };
+        const list = [payload, ...evidence];
+        setEvidence(list);
+        await addNotification(
+          `🚨 Evidence Captured (Demo)`,
+          `A simulated ${fileType} clip was securely held in the Guest Evidence Vault.`
+        );
+      } catch (err) {
+        console.error('Error saving guest evidence:', err);
+      }
+      return;
+    }
+    
+    try {
+      const extension = fileType === 'image' ? 'jpg' : (fileType === 'audio' ? 'webm' : 'mp4');
+      const storageRef = ref(storage, `users/${user.uid}/evidence/${evidenceId}.${extension}`);
+      console.log('Uploading evidence file to Firebase Storage:', fileType, evidenceId);
+      const uploadTask = await uploadString(storageRef, fileDataUrl, 'data_url');
+      fileUrl = await getDownloadURL(uploadTask.ref);
+      console.log('Firebase Storage upload successful! URL:', fileUrl);
+    } catch (storageError) {
+      console.warn('Firebase Storage upload failed/unconfigured. Falling back to local secure database storage.', storageError);
+      finalStatus = "Secured locally in Secure Document Vault";
+      fileUrl = fileDataUrl;
+    }
+    
+    try {
+      const payload = {
+        timestamp,
+        location,
+        fileType,
+        fileSize,
+        fileUrl,
+        storageStatus: finalStatus,
+        sosId: sosId || activeSOS?.id || ''
+      };
+      
+      const docRef = doc(db, 'users', user.uid, 'evidence', evidenceId);
+      await setDoc(docRef, payload);
+      
+      await addNotification(
+        `🚨 Evidence Captured`,
+        `A high-resolution ${fileType} clip was encrypted and uploaded to the Evidence Vault under status: ${finalStatus}.`
+      );
+      
+      console.log('Evidence metadata written successfully to Firestore.');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}/evidence/${evidenceId}`);
+    }
+  };
+
+  const deleteEvidence = async (id: string) => {
+    if (!user) return;
+    
+    if (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user') {
+      setEvidence(prev => prev.filter(e => e.id !== id));
+      await addNotification('Evidence Deleted', 'Simulated evidence item removed from the vault.');
+      return;
+    }
+    
+    try {
+      const docRef = doc(db, 'users', user.uid, 'evidence', id);
+      await deleteDoc(docRef);
+      console.log('Evidence document deleted successfully.');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/evidence/${id}`);
+    }
+  };
+
   // Notifications
   const addNotification = async (title: string, body: string) => {
     if (!user) return;
@@ -1615,6 +1753,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         notifications,
         settings,
         loading,
+        silentModeEnabled,
+        toggleSilentMode,
+        startEmergencySiren,
+        stopEmergencySiren,
         needsOnboarding,
         isOffline,
         batteryStatus,
@@ -1622,6 +1764,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         activeSOS,
         activeJourney,
         fakeCallActive,
+        evidence,
+        addEvidence,
+        deleteEvidence,
         signInWithGoogle,
         logOut,
         updateProfileData,

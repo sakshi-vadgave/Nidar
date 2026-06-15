@@ -21,6 +21,8 @@ import SafetyTools from './pages/SafetyTools';
 import Notifications from './pages/Notifications';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import EvidenceHistory from './pages/EvidenceHistory';
+import Fearless from './pages/Fearless';
 
 // Platform Components
 import Header from './components/Header';
@@ -55,7 +57,7 @@ function ProtectedLayout() {
     return <Navigate to="/onboarding" replace />;
   }
 
-  const isTabRoute = ['/dashboard', '/maps', '/guardians', '/journey', '/tools', '/profile'].includes(location.pathname);
+  const isTabRoute = ['/dashboard', '/maps', '/fearless', '/guardians', '/journey', '/tools', '/profile'].includes(location.pathname);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col max-w-lg mx-auto border-x border-slate-100 shadow-xl relative pb-20">
@@ -71,6 +73,9 @@ function ProtectedLayout() {
             </div>
             <div className={location.pathname === '/maps' ? 'block w-full h-full' : 'hidden'}>
               <Maps />
+            </div>
+            <div className={location.pathname === '/fearless' ? 'block w-full h-full' : 'hidden'}>
+              <Fearless />
             </div>
             <div className={location.pathname === '/guardians' ? 'block w-full h-full' : 'hidden'}>
               <Guardians />
@@ -100,6 +105,7 @@ function ProtectedLayout() {
                 <Route path="/contacts" element={<EmergencyContacts />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/evidence" element={<EvidenceHistory />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </motion.div>

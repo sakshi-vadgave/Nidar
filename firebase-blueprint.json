@@ -98,6 +98,21 @@
         "status": { "type": "string" }
       },
       "required": ["title", "body", "timestamp", "status"]
+    },
+    "Evidence": {
+      "title": "Evidence",
+      "description": "An audio, photo, or video clip captured during SOS and stored on cloud storage",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "location": { "type": "object" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "fileUrl": { "type": "string" },
+        "storageStatus": { "type": "string" },
+        "sosId": { "type": "string" }
+      },
+      "required": ["timestamp", "fileType", "fileSize", "fileUrl", "storageStatus"]
     }
   },
   "firestore": {
@@ -128,6 +143,10 @@
     "/users/{userId}/notifications/{notificationId}": {
       "schema": "Notification",
       "description": "Notification history logs"
+    },
+    "/users/{userId}/evidence/{evidenceId}": {
+      "schema": "Evidence",
+      "description": "Audio, video and photo evidence logs securely stored"
     }
   }
 }

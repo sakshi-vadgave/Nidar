@@ -71,12 +71,41 @@ service cloud.firestore {
           && data.status is string && (data.status == 'unread' || data.status == 'read');
     }
 
+    // Validate Evidence fields
+    function isValidEvidence(data) {
+      return data.fileType is string && (data.fileType == 'audio' || data.fileType == 'image' || data.fileType == 'video')
+          && data.fileSize is number
+          && data.fileUrl is string && data.fileUrl.size() <= 5000000
+          && data.storageStatus is string && data.storageStatus.size() <= 100;
+    }
+
+    function isValidFearlessVideo(data) {
+      return data.id is string
+          && data.title is string && data.title.size() >= 1 && data.title.size() <= 300
+          && data.category is string && data.category.size() >= 1 && data.category.size() <= 150
+          && data.description is string && data.description.size() <= 2000
+          && data.url is string && data.url.size() >= 5 && data.url.size() <= 1000;
+    }
+
+    function isValidFearlessState(data) {
+      return ("points" in data && (data.points is int || data.points is float || data.points is number))
+          && (!("completedChallenges" in data) || data.completedChallenges is list)
+          && (!("readArticles" in data) || data.readArticles is list)
+          && (!("watchedVideos" in data) || data.watchedVideos is list)
+          && (!("badges" in data) || data.badges is list);
+    }
+
     // Match blocks for users collection and nested subcollections
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.createdAt is string && request.resource.data.createdAt.size() <= 50;
       allow update: if isOwner(userId) && isValidUser(request.resource.data) && (!("updatedAt" in request.resource.data) || (request.resource.data.updatedAt is string && request.resource.data.updatedAt.size() <= 50));
       allow delete: if false;
+
+      // Allow owner read access to any nested subcollection or document recursively
+      match /{allSubcollections=**} {
+        allow read: if isOwner(userId);
+      }
 
       // Guardians subcollection
       match /guardians/{guardianId} {
@@ -122,6 +151,29 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidId(notificationId) && isValidNotification(request.resource.data);
         allow update: if isOwner(userId) && isValidNotification(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Evidence subcollection
+      match /evidence/{evidenceId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(evidenceId) && isValidEvidence(request.resource.data);
+        allow update: if isOwner(userId) && isValidEvidence(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Fearless videos subcollection
+      match /fearless_videos/{videoId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(videoId) && isValidFearlessVideo(request.resource.data);
+        allow update: if isOwner(userId) && isValidFearlessVideo(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Fearless state subcollection
+      match /fearless_state/{stateId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(stateId) && isValidFearlessState(request.resource.data);
         allow delete: if isOwner(userId);
       }
     }

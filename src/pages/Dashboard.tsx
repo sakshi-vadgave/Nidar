@@ -493,7 +493,9 @@ export default function Dashboard() {
           </div>
           <div className="overflow-hidden space-y-0.5">
             <h4 className="text-sm font-bold text-slate-800 leading-tight">Voice SOS</h4>
-            <p className="text-[10px] text-slate-400 font-medium leading-none truncate font-sans">Keyword trigger</p>
+            <p className="text-[10px] text-rose-500 font-extrabold leading-none truncate font-sans">
+              Say &quot;Emergency&quot; or &quot;Help&quot;
+            </p>
           </div>
         </div>
 
@@ -580,34 +582,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Live GPS Telemetry Tracking Status parameters */}
-        <div id="live-telemetry-parameters" className="bg-white rounded-[24px] p-5 border border-slate-105 shadow-xl shadow-slate-100/45 space-y-3">
-          <div className="flex justify-between items-center">
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Sat Tracker Telemetry</h4>
-            <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50/70 px-2 py-0.5 rounded uppercase tracking-wider animate-pulse">
-              {liveLocation.trackingStatus}
-            </span>
-          </div>
-
-          <div className="space-y-2 text-xs font-semibold text-slate-600">
-            <div className="flex justify-between items-center bg-slate-50/50 px-3 py-1.5 rounded-xl">
-              <span className="text-slate-400 font-sans">Geographic Position</span>
-              <span className="font-mono text-slate-900 font-bold">{liveLocation.lat.toFixed(6)}, {liveLocation.lng.toFixed(6)}</span>
-            </div>
-            <div className="flex justify-between items-center bg-slate-50/50 px-3 py-1.5 rounded-xl">
-              <span className="text-slate-400 font-sans">Sensor Accuracy</span>
-              <span className="font-mono text-indigo-600 font-bold">± {liveLocation.accuracy} meters</span>
-            </div>
-            <div className="flex justify-between items-center bg-slate-50/50 px-3 py-1.5 rounded-xl">
-              <span className="text-slate-400 font-sans">Velocity Speed</span>
-              <span className="font-mono text-slate-900 font-bold">{liveLocation.speed} km/h • {liveLocation.lastUpdated}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Exact Location geocoding display */}
-        <div id="exact-location-banner" className="bg-white rounded-[24px] p-5 border border-slate-100 shadow-xl shadow-slate-100/40 space-y-2">
-          <h4 className="text-[9px] font-extrabold text-[#FF5A7A] tracking-widest uppercase">Reverse Geocode Footprint</h4>
+        {/* Verified Live Location Display */}
+        <div id="verified-live-location" className="bg-white rounded-[24px] p-5 border border-slate-100 shadow-xl shadow-slate-100/40 space-y-2">
+          <h4 className="text-[9px] font-extrabold text-[#FF5A7A] tracking-widest uppercase">Verified Live Location</h4>
           <div className="flex items-start space-x-3.5 mt-1">
             <div className="p-2.5 bg-pink-50 rounded-xl text-pink-500 shrink-0 shadow-sm">
               <MapPin className="w-5 h-5" />
@@ -623,72 +600,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {/* Guardian Status Card */}
-      <div
-        onClick={() => navigate('/guardians')}
-        className="bg-white rounded-[24px] border border-slate-100 shadow-xl shadow-slate-100/20 p-5 space-y-4 cursor-pointer hover:border-[#6366F1]/30 hover:shadow-md transition-all"
-      >
-        <div className="flex justify-between items-center border-b border-slate-50 pb-2.5">
-          <h3 className="text-sm font-extrabold text-[#0F172A] flex items-center space-x-1.5">
-            <Heart className="w-4.5 h-4.5 text-primary fill-primary/10" />
-            <span>Active Guardians Status</span>
-          </h3>
-          <span className="text-xs font-bold text-[#FF5A7A] bg-pink-50/50 px-2.5 py-1 rounded-full">{guardians.length} connected</span>
-        </div>
-        {guardians.length === 0 ? (
-          <p className="text-xs text-slate-450 bg-slate-50/50 p-3.5 rounded-xl border border-slate-100">No champions connected. Set your priority protectors immediately.</p>
-        ) : (
-          <div className="flex items-center justify-between py-1">
-            <div className="flex -space-x-1.5 overflow-hidden">
-              {guardians.slice(0, 5).map((g, idx) => (
-                <div
-                  key={g.id}
-                  style={{ zIndex: 10 - idx }}
-                  className="w-9 h-9 rounded-full border-2 border-white bg-[#6366F1]/10 text-[#6366F1] flex items-center justify-center text-xs font-extrabold font-sans shadow-sm"
-                >
-                  {g.name.charAt(0).toUpperCase()}
-                </div>
-              ))}
-              {guardians.length > 5 && (
-                <div className="w-9 h-9 rounded-full border-2 border-white bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold shadow-sm">
-                  +{guardians.length - 5}
-                </div>
-              )}
-            </div>
-            <span className="text-xs text-slate-400 font-semibold tracking-wide">All Guardians authorized to stream</span>
-          </div>
-        )}
-      </div>
-
-      {/* Journey Monitoring Card */}
-      {activeJourney ? (
-        <div
-          onClick={() => navigate('/journey')}
-          className="bg-indigo-50/70 rounded-[24px] p-5.5 border border-indigo-100 shadow-md shadow-indigo-50 flex items-center justify-between cursor-pointer"
-        >
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold text-indigo-600 bg-indigo-100 border border-indigo-200/50 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-              JOURNEY TRACKING ACTIVE
-            </span>
-            <h4 className="text-sm font-bold text-slate-800 mt-2">{activeJourney.destinationName}</h4>
-            <p className="text-xs text-slate-500 font-semibold">ETA: {activeJourney.eta}</p>
-          </div>
-          <span className="h-2 w-2 rounded-full bg-indigo-600 animate-ping" />
-        </div>
-      ) : (
-        <div
-          onClick={() => navigate('/journey')}
-          className="bg-white rounded-[24px] p-5 border border-slate-100 shadow-xl shadow-slate-100/30 flex items-center justify-between cursor-pointer hover:border-slate-200 transition-all"
-        >
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Trajectory Monitor</span>
-            <h4 className="text-sm font-bold text-slate-700 mt-1">Journey Status: Idle</h4>
-            <p className="text-xs text-slate-400 font-medium">No active trajectory sentinel is currently active.</p>
-          </div>
-          <ChevronRight className="w-5 h-5 text-slate-400 shrink-0 text-slate-350" />
-        </div>
-      )}
 
       {/* Recent Alerts Logs card */}
       <div className="bg-white rounded-[24px] p-5 border border-slate-100 shadow-xl shadow-slate-100/20 space-y-4">

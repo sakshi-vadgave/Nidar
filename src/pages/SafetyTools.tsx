@@ -3,358 +3,141 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
-import { motion, AnimatePresence } from 'motion/react';
-import {
-  Mic,
-  ShieldCheck,
-  Phone,
-  Volume2,
-  Zap,
-  Sparkles,
-  RefreshCw,
-  Bell,
-  Sliders,
-  CheckCircle2,
-  SlidersHorizontal,
-  Flame,
-  Radio
-} from 'lucide-react';
-import EmergencyAlarm from '../components/EmergencyAlarm';
+import React from 'react';
+import { motion } from 'motion/react';
+import { Shield, Heart, Activity, PhoneCall, AlertCircle } from 'lucide-react';
 
 export default function SafetyTools() {
-  const { setFakeCallActive, addNotification, settings, updateSettings } = useApp();
-
-  // Voice training and real-time mic monitoring
-  const [isListening, setIsListening] = useState(false);
-  const [trainingPhase, setTrainingPhase] = useState<'idle' | 'listening' | 'trained'>('idle');
-  const [decibels, setDecibels] = useState<number[]>(Array(12).fill(5));
-
-  // Voice training and decibel meter spectrum effect
-  useEffect(() => {
-    let audioCtx: AudioContext | null = null;
-    let source: MediaStreamAudioSourceNode | null = null;
-    let analyser: AnalyserNode | null = null;
-    let stream: MediaStream | null = null;
-    let animationFrameId: number;
-    let recognitionInstance: any = null;
-
-    if (isListening) {
-      // 1. Web Speech API Recognition Setup
-      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognitionClass) {
-        try {
-          const rec = new SpeechRecognitionClass();
-          rec.continuous = true;
-          rec.interimResults = true;
-          rec.lang = 'en-US';
-
-          rec.onresult = (event: any) => {
-            let phraseDetected = false;
-            let detectedWord = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const text = event.results[i][0].transcript.toLowerCase();
-              if (
-                text.includes('help help') ||
-                text.includes('help') ||
-                text.includes('emergency') ||
-                text.includes('danger') ||
-                text.includes('metro')
-              ) {
-                phraseDetected = true;
-                detectedWord = text.trim();
-                break;
-              }
-            }
-
-            if (phraseDetected) {
-              setIsListening(false);
-              setTrainingPhase('trained');
-              addNotification(
-                'Voice Keyword Registered',
-                `Calibrated keyword phrase detected: "${detectedWord.toUpperCase()}". Tactical Voice Trigger has been successfully calibrated and loaded.`
-              );
-              // Auto-enable backgrounds voice detection
-              updateSettings({ audioTriggerEnabled: true });
-            }
-          };
-
-          rec.onerror = (err: any) => {
-            console.warn('Speech training recognition error:', err.error);
-          };
-
-          rec.start();
-          recognitionInstance = rec;
-        } catch (e) {
-          console.warn('Failed to start speech recognition training:', e);
-        }
-      }
-
-      // 2. Real microphone visualizer via Web Audio API
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then((s) => {
-          stream = s;
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-          audioCtx = new AudioContextClass();
-          source = audioCtx.createMediaStreamSource(s);
-          analyser = audioCtx.createAnalyser();
-          analyser.fftSize = 64;
-          source.connect(analyser);
-
-          const bufferLength = analyser.frequencyBinCount;
-          const dataArray = new Uint8Array(bufferLength);
-
-          const updateMeter = () => {
-            if (!analyser) return;
-            analyser.getByteFrequencyData(dataArray);
-
-            const step = Math.floor(bufferLength / 12) || 1;
-            const newDecibels = Array(12).fill(0).map((_, i) => {
-              const dataIndex = Math.min(i * step, dataArray.length - 1);
-              const val = dataArray[dataIndex];
-              // Map 0-255 values cleanly to 10-60% heights
-              return 10 + Math.floor((val / 255) * 50);
-            });
-            setDecibels(newDecibels);
-            animationFrameId = requestAnimationFrame(updateMeter);
-          };
-          updateMeter();
-        })
-        .catch((err) => {
-          console.warn('Microphone stream access denied; playing fallback equalizer animation:', err);
-          // Fallback animated wave
-          let freq = 0;
-          const interval = setInterval(() => {
-            freq += 0.2;
-            const fallbackDecibels = Array(12).fill(0).map((_, idx) => {
-              const sineVal = Math.sin(freq + idx * 0.5);
-              return 15 + Math.floor((sineVal + 1) * 20);
-            });
-            setDecibels(fallbackDecibels);
-          }, 80);
-          (window as any)._fallbackVoiceInterval = interval;
-        });
-    } else {
-      setDecibels(Array(12).fill(5));
+  const emergencyNumbers = [
+    {
+      id: 'police',
+      name: 'Police Patrol Force',
+      number: '112',
+      description: 'Law enforcement, dispatch coordination & active crisis situations.',
+      icon: Shield,
+      badgeText: '🚔 Police Dispatch',
+      badgeType: 'police',
+      borderClass: 'border-indigo-150/60 hover:border-indigo-400/40',
+      badgeClass: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+      iconClass: 'bg-indigo-50 text-indigo-650',
+      buttonClass: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/10 hover:shadow-indigo-600/20 text-white',
+    },
+    {
+      id: 'women-helpline',
+      name: 'Women Help Desk',
+      number: '1091',
+      description: 'Immediate counseling support, physical protection & crisis advocacy.',
+      icon: Heart,
+      badgeText: '👩 Women Support',
+      badgeType: 'women',
+      borderClass: 'border-purple-150/60 hover:border-purple-400/40',
+      badgeClass: 'bg-purple-50 text-purple-600 border-purple-100',
+      iconClass: 'bg-purple-50 text-purple-650',
+      buttonClass: 'bg-purple-600 hover:bg-purple-700 shadow-purple-600/10 hover:shadow-purple-600/20 text-white',
+    },
+    {
+      id: 'ambulance',
+      name: 'Ambulance Systems',
+      number: '108',
+      description: 'Emergency trauma response, first-aid medical support & critical transit.',
+      icon: Activity,
+      badgeText: '🚑 Medical Care',
+      badgeType: 'ambulance',
+      borderClass: 'border-red-150/60 hover:border-red-400/40',
+      badgeClass: 'bg-red-50 text-red-600 border-red-100',
+      iconClass: 'bg-red-50 text-red-650',
+      buttonClass: 'bg-red-600 hover:bg-red-700 shadow-red-600/10 hover:shadow-red-600/20 text-white',
     }
-
-    return () => {
-      if (recognitionInstance) {
-        try {
-          recognitionInstance.stop();
-        } catch (_) {}
-      }
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-      if (audioCtx) {
-        audioCtx.close().catch(() => {});
-      }
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      if ((window as any)._fallbackVoiceInterval) {
-        clearInterval((window as any)._fallbackVoiceInterval);
-      }
-    };
-  }, [isListening]);
-
-  // Flashlight SOS Screen strobe
-  const [flashlightActive, setFlashlightActive] = useState(false);
-  const [flashOn, setFlashOn] = useState(false);
-
-  useEffect(() => {
-    let interval: any;
-    if (flashlightActive) {
-      interval = setInterval(() => {
-        setFlashOn(p => !p);
-      }, 250); // strobe frequency
-    } else {
-      setFlashOn(false);
-    }
-    return () => clearInterval(interval);
-  }, [flashlightActive]);
-
-  // Trainer trigger phrase toggle
-  const toggleVoiceListen = () => {
-    if (isListening) {
-      setIsListening(false);
-      setTrainingPhase('trained');
-      addNotification('Voice Phrase Registered', 'Your voice signature has been calibrated securely.');
-    } else {
-      setTrainingPhase('listening');
-      setIsListening(true);
-    }
-  };
-
-  const triggerInstantFakeCall = () => {
-    addNotification('Fake Call Scheduled', 'An escape phone call has been scheduled. Prepare to accept.');
-    setTimeout(() => {
-      setFakeCallActive(true);
-    }, 2800); // 2.8 second escape schedule
-  };
+  ];
 
   return (
-    <div id="safety-tools-page" className="space-y-6 pb-26 font-sans">
+    <div id="emergency-numbers-page" className="space-y-6 pb-26 font-sans">
       
-      {/* Visual Strobe SOS Fullscreen panel */}
-      <AnimatePresence>
-        {flashlightActive && (
-          <motion.div
-            id="strobe-flashlight-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setFlashlightActive(false)}
-            className={`fixed inset-0 z-50 flex flex-col justify-center items-center p-6 cursor-pointer ${
-              flashOn ? 'bg-white text-black' : 'bg-red-600 text-white'
-            }`}
-          >
-            <div className="text-center space-y-3 select-none">
-              <Zap className="w-16 h-16 mx-auto animate-bounce" />
-              <h2 className="text-3xl font-extrabold tracking-tight">STROBE DETECTOR ACTIVE</h2>
-              <p className="text-xs opacity-80 max-w-xs mx-auto leading-relaxed">
-                Aim your device screen towards onlookers or threat actors. Flashing SOS strobe frequency deployed. Tap anywhere to close.
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Header Info */}
       <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-        <h2 className="text-xl font-display font-bold text-slate-800 flex items-center space-x-2">
-          <Flame className="w-5.5 h-5.5 text-primary" />
-          <span>Tactical Safety Tools</span>
+        <h2 className="text-xl font-display font-black text-slate-900 flex items-center space-x-2">
+          <PhoneCall className="w-5.5 h-5.5 text-[#FF5A7A]" />
+          <span>Emergency Helplines</span>
         </h2>
-        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-          Arm yourself with offline deterrent arrays: simulated alarms, voice keyword tracking, and direct fake escape.
+        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+          Access instant one-tap voice dispatches to local tactical units and medical emergency response centers. Always verify and contact immediately when in threat environments.
         </p>
       </div>
 
-      {/* Emergency Siren Controller (Oscillator Component) */}
-      <div className="flex flex-col space-y-2 bg-white p-4.5 rounded-2xl border border-slate-100 shadow-sm">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sonic Deterrents</h3>
-        <EmergencyAlarm />
+      {/* Safety Notice Tip */}
+      <div className="bg-amber-50 border border-amber-100/70 p-3.5 rounded-xl flex items-start space-x-3 text-amber-800 text-xs font-semibold">
+        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+        <p className="leading-relaxed text-amber-750">
+          <strong>Direct Line Backup:</strong> Calls are routed directly via your mobile carrier network to ensure reliability even in areas with offline or highly limited internet coverage.
+        </p>
       </div>
 
-      {/* Strobe SOS flashing tool */}
-      <button
-        id="flashlight-strobe-toggle"
-        onClick={() => setFlashlightActive(true)}
-        className="w-full bg-white text-slate-800 p-4.5 rounded-2xl border border-slate-100 hover:border-yellow-200 shadow-sm flex items-center justify-between transition-all"
-      >
-        <div className="flex items-center space-x-3 text-left">
-          <div className="p-2.5 bg-yellow-50 rounded-xl text-yellow-500">
-            <Zap className="w-5 h-5 fill-yellow-500/10" />
-          </div>
-          <div>
-            <h4 className="font-semibold text-sm tracking-tight text-slate-800">Visual SOS Strobe</h4>
-            <span className="text-xs text-slate-500">High frequency screening flash</span>
-          </div>
-        </div>
-        <ChevronRight className="w-4 h-4 text-slate-400" />
-      </button>
-
-      {/* Voice SOS Calibrator with visual equalizer */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
-        <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center space-x-1">
-            <Radio className="w-4 h-4 text-primary" />
-            <span>Keyword Voice Trigger</span>
-          </h3>
-          <span className={`text-[9px] font-bold px-2.5 py-0.5 rounded-full border ${
-            settings.audioTriggerEnabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400'
-          }`}>
-            {settings.audioTriggerEnabled ? 'ACTIVE LISTENING' : 'OFF'}
-          </span>
-        </div>
-
-        <div className="flex items-center space-x-4 bg-slate-50 p-4.5 rounded-xl border border-slate-100">
-          <button
-            id="voice-training-trigger"
-            onClick={toggleVoiceListen}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-              isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white shadow text-slate-600 border'
-            }`}
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-
-          <div className="flex-1 space-y-1">
-            <h4 className="font-semibold text-sm text-slate-800 tracking-tight">
-              {trainingPhase === 'idle'
-                ? 'Train Keyword "HELP HELP"'
-                : trainingPhase === 'listening'
-                ? 'Scream trigger statement now...'
-                : 'Phrase Active ("HELP HELP")'}
-            </h4>
-            <p className="text-[10px] text-slate-500">
-              {isListening
-                ? 'Listening to microphone...'
-                : 'Triggers instant SOS dispatch even if device is inside pocket.'}
-            </p>
-          </div>
-        </div>
-
-        {/* Dynamic Equalizer Visualizer */}
-        <div className="flex items-end justify-center space-x-1.5 h-10 py-1 bg-slate-900 rounded-xl px-4 select-none">
-          {decibels.map((dbVal, index) => (
+      {/* List of Emergency Cards */}
+      <div className="space-y-4">
+        {emergencyNumbers.map((item) => {
+          const IconComponent = item.icon;
+          return (
             <motion.div
-              key={index}
-              style={{ height: `${dbVal}%` }}
-              className={`w-1 rounded-full transition-all duration-75 ${
-                isListening ? 'bg-primary' : 'bg-indigo-500/55'
-              }`}
-            />
-          ))}
-        </div>
+              id={`helpline-card-${item.id}`}
+              key={item.id}
+              whileHover={{ y: -2 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              className={`bg-white p-5 rounded-[24px] border ${item.borderClass} shadow-xl shadow-slate-100/40 flex flex-col md:flex-row items-stretch justify-between gap-4 transition-all`}
+            >
+              {/* Left Column: Icon & Info labels */}
+              <div className="flex items-start space-x-4 flex-1">
+                <div className={`p-3 rounded-2xl shrink-0 mt-1 shadow-sm ${item.iconClass}`}>
+                  <IconComponent className="w-6 h-6" />
+                </div>
+                
+                <div className="space-y-1.5 min-w-0">
+                  <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border tracking-wide inline-block ${item.badgeClass}`}>
+                    {item.badgeText}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight leading-none pt-0.5">
+                    {item.name}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-semibold leading-relaxed">
+                    {item.description}
+                  </p>
+                </div>
+              </div>
 
-        {/* Setting Toggle */}
-        <div className="flex justify-between items-center pt-2 text-xs">
-          <span className="text-slate-600 font-semibold">Enable Background Voice Detection</span>
-          <button
-            id="toggle-voice-detection-setting"
-            onClick={() => updateSettings({ audioTriggerEnabled: !settings.audioTriggerEnabled })}
-            className={`w-11 h-6 rounded-full transition-all ${
-              settings.audioTriggerEnabled ? 'bg-emerald-500' : 'bg-slate-200'
-            } relative flex items-center p-0.5`}
-          >
-            <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${
-              settings.audioTriggerEnabled ? 'translate-x-5' : 'translate-x-0'
-            }`} />
-          </button>
-        </div>
+              {/* Right Column: Numeric & Direct Speed Dial Action Button */}
+              <div className="flex flex-row md:flex-col justify-between md:justify-center items-center gap-3.5 border-t md:border-t-0 border-slate-100/70 pt-3 md:pt-0 shrink-0 md:min-w-[170px]">
+                {/* Visual Number Indicator */}
+                <div className="text-left md:text-center">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">
+                    HELPLINE DIAL
+                  </span>
+                  <span className="text-2xl font-mono font-black text-slate-900 tracking-tight leading-none block">
+                    {item.number}
+                  </span>
+                </div>
+
+                {/* Highly tap-friendly primary Phone Call button */}
+                <a
+                  id={`dial-button-${item.id}`}
+                  href={`tel:${item.number}`}
+                  className={`w-full md:w-auto px-6 py-3 rounded-xl font-extrabold text-xs tracking-wider uppercase text-center flex items-center justify-center space-x-2 transition-all active:scale-95 shadow-md ${item.buttonClass}`}
+                >
+                  <PhoneCall className="w-4 h-4 shrink-0" />
+                  <span>Call {item.number}</span>
+                </a>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* Emergency Escapade Fake Call block */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Escapade Utilities</h3>
-        <div className="space-y-2">
-          <button
-            id="scheduler-fake-call-instant"
-            onClick={triggerInstantFakeCall}
-            className="w-full py-4 bg-indigo-600/10 text-indigo-700 font-bold text-xs tracking-wider rounded-2xl flex items-center justify-center space-x-2 border border-indigo-200/50 hover:bg-indigo-600/15"
-          >
-            <Phone className="w-4 h-4" />
-            <span>GENERATE ESCAPE FAKE-CALL (3s delay)</span>
-          </button>
-        </div>
+      {/* Warning Notice Disclaimer */}
+      <div className="text-center pt-2">
+        <p className="text-[10px] font-bold text-slate-400 tracking-wider uppercase flex items-center justify-center space-x-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+          <span>Please initiate speed dials only in actual emergency situations</span>
+        </p>
       </div>
 
     </div>
-  );
-}
-
-interface ChevronRightProps {
-  className?: string;
-}
-
-function ChevronRight({ className }: ChevronRightProps) {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <polyline points="9 18 15 12 9 6"></polyline>
-    </svg>
   );
 }

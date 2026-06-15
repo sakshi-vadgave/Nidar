@@ -6,7 +6,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Home, Map, ShieldAlert, HeartHandshake, User } from 'lucide-react';
+import { Home, Map, Phone, HeartHandshake, User } from 'lucide-react';
 
 export default function Navigation() {
   const location = useLocation();
@@ -16,7 +16,7 @@ export default function Navigation() {
     { name: 'Home', path: '/dashboard', icon: Home },
     { name: 'Emergency Map', path: '/maps', icon: Map },
     { name: 'Guardians', path: '/guardians', icon: HeartHandshake },
-    { name: 'Tools', path: '/tools', icon: ShieldAlert },
+    { name: 'Helpline', path: '/tools', icon: Phone },
     { name: 'Profile', path: '/profile', icon: User },
   ];
 

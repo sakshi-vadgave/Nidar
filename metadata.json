@@ -2,7 +2,8 @@
   "name": "NIDAR Safety",
   "description": "Emergency safety map and secure path tracker with live GPS telemetry tracking.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "microphone"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

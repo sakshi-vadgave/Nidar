@@ -305,6 +305,91 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [activeSOS]);
 
+  // Background Voice Trigger Recognition via Web Speech API
+  useEffect(() => {
+    let recognitionInstance: any = null;
+    let autoRestart = true;
+
+    if (settings.audioTriggerEnabled && user) {
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionClass) {
+        try {
+          const rec = new SpeechRecognitionClass();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
+
+          rec.onstart = () => {
+            console.log('Background voice detection activated and listening.');
+          };
+
+          rec.onresult = async (event: any) => {
+            let matchesKeyword = false;
+            let phrase = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const result = event.results[i];
+              const transcript = result[0].transcript.toLowerCase();
+              phrase += transcript + ' ';
+              if (
+                transcript.includes('help help') ||
+                transcript.includes('help metro') ||
+                transcript.includes('emergency') ||
+                (transcript.includes('help') && result.isFinal)
+              ) {
+                matchesKeyword = true;
+                break;
+              }
+            }
+
+            if (matchesKeyword) {
+              console.log('Emergency Voice Trigger keyword matches successfully:', phrase);
+              if (!activeSOS) {
+                await triggerSOS(`Voice Keyword Alert: "${phrase.trim()}"`);
+              }
+            }
+          };
+
+          rec.onerror = (err: any) => {
+            console.warn('Speech recognition background listener error:', err.error);
+            if (err.error === 'not-allowed') {
+              console.warn('Microphone permission blocked or not granted for background listening.');
+              autoRestart = false;
+            }
+          };
+
+          rec.onend = () => {
+            console.log('Speech recognition background session ended.');
+            if (autoRestart && settings.audioTriggerEnabled && !activeSOS) {
+              try {
+                rec.start();
+              } catch (e) {
+                console.warn('Could not auto-restart background speech recognition:', e);
+              }
+            }
+          };
+
+          rec.start();
+          recognitionInstance = rec;
+        } catch (e) {
+          console.error('Speech recognition failed to initialize:', e);
+        }
+      } else {
+        console.warn('SpeechRecognition is not supported in the current device browser.');
+      }
+    }
+
+    return () => {
+      autoRestart = false;
+      if (recognitionInstance) {
+        try {
+          recognitionInstance.stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
+  }, [settings.audioTriggerEnabled, user, activeSOS]);
+
   const syncOfflineQueue = async () => {
     try {
       const offlineQueueStr = localStorage.getItem('nidar_offline_positions');

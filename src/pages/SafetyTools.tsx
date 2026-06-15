@@ -26,22 +26,138 @@ import EmergencyAlarm from '../components/EmergencyAlarm';
 export default function SafetyTools() {
   const { setFakeCallActive, addNotification, settings, updateSettings } = useApp();
 
-  // Voice training simulation
+  // Voice training and real-time mic monitoring
   const [isListening, setIsListening] = useState(false);
   const [trainingPhase, setTrainingPhase] = useState<'idle' | 'listening' | 'trained'>('idle');
-  const [decibels, setDecibels] = useState<number[]>(Array(12).fill(10));
+  const [decibels, setDecibels] = useState<number[]>(Array(12).fill(5));
 
-  // Simulated Voice spectrum animation
+  // Voice training and decibel meter spectrum effect
   useEffect(() => {
-    let t: any;
+    let audioCtx: AudioContext | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let stream: MediaStream | null = null;
+    let animationFrameId: number;
+    let recognitionInstance: any = null;
+
     if (isListening) {
-      t = setInterval(() => {
-        setDecibels(Array(12).fill(0).map(() => Math.floor(Math.random() * 45) + 10));
-      }, 100);
+      // 1. Web Speech API Recognition Setup
+      const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognitionClass) {
+        try {
+          const rec = new SpeechRecognitionClass();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = 'en-US';
+
+          rec.onresult = (event: any) => {
+            let phraseDetected = false;
+            let detectedWord = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const text = event.results[i][0].transcript.toLowerCase();
+              if (
+                text.includes('help help') ||
+                text.includes('help') ||
+                text.includes('emergency') ||
+                text.includes('danger') ||
+                text.includes('metro')
+              ) {
+                phraseDetected = true;
+                detectedWord = text.trim();
+                break;
+              }
+            }
+
+            if (phraseDetected) {
+              setIsListening(false);
+              setTrainingPhase('trained');
+              addNotification(
+                'Voice Keyword Registered',
+                `Calibrated keyword phrase detected: "${detectedWord.toUpperCase()}". Tactical Voice Trigger has been successfully calibrated and loaded.`
+              );
+              // Auto-enable backgrounds voice detection
+              updateSettings({ audioTriggerEnabled: true });
+            }
+          };
+
+          rec.onerror = (err: any) => {
+            console.warn('Speech training recognition error:', err.error);
+          };
+
+          rec.start();
+          recognitionInstance = rec;
+        } catch (e) {
+          console.warn('Failed to start speech recognition training:', e);
+        }
+      }
+
+      // 2. Real microphone visualizer via Web Audio API
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((s) => {
+          stream = s;
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          audioCtx = new AudioContextClass();
+          source = audioCtx.createMediaStreamSource(s);
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          source.connect(analyser);
+
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+
+          const updateMeter = () => {
+            if (!analyser) return;
+            analyser.getByteFrequencyData(dataArray);
+
+            const step = Math.floor(bufferLength / 12) || 1;
+            const newDecibels = Array(12).fill(0).map((_, i) => {
+              const dataIndex = Math.min(i * step, dataArray.length - 1);
+              const val = dataArray[dataIndex];
+              // Map 0-255 values cleanly to 10-60% heights
+              return 10 + Math.floor((val / 255) * 50);
+            });
+            setDecibels(newDecibels);
+            animationFrameId = requestAnimationFrame(updateMeter);
+          };
+          updateMeter();
+        })
+        .catch((err) => {
+          console.warn('Microphone stream access denied; playing fallback equalizer animation:', err);
+          // Fallback animated wave
+          let freq = 0;
+          const interval = setInterval(() => {
+            freq += 0.2;
+            const fallbackDecibels = Array(12).fill(0).map((_, idx) => {
+              const sineVal = Math.sin(freq + idx * 0.5);
+              return 15 + Math.floor((sineVal + 1) * 20);
+            });
+            setDecibels(fallbackDecibels);
+          }, 80);
+          (window as any)._fallbackVoiceInterval = interval;
+        });
     } else {
       setDecibels(Array(12).fill(5));
     }
-    return () => clearInterval(t);
+
+    return () => {
+      if (recognitionInstance) {
+        try {
+          recognitionInstance.stop();
+        } catch (_) {}
+      }
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      if (audioCtx) {
+        audioCtx.close().catch(() => {});
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if ((window as any)._fallbackVoiceInterval) {
+        clearInterval((window as any)._fallbackVoiceInterval);
+      }
+    };
   }, [isListening]);
 
   // Flashlight SOS Screen strobe
@@ -60,12 +176,12 @@ export default function SafetyTools() {
     return () => clearInterval(interval);
   }, [flashlightActive]);
 
-  // Trainer trigger phrase
+  // Trainer trigger phrase toggle
   const toggleVoiceListen = () => {
     if (isListening) {
       setIsListening(false);
       setTrainingPhase('trained');
-      addNotification('Voice Phrase Registered', 'Your voice signature "HELP METRO" has been calibrated securely.');
+      addNotification('Voice Phrase Registered', 'Your voice signature has been calibrated securely.');
     } else {
       setTrainingPhase('listening');
       setIsListening(true);

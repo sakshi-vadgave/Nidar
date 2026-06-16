@@ -97,3 +97,12 @@ export interface EvidenceItem {
   storageStatus: string;
   sosId?: string;
 }
+
+export interface AuditLogItem {
+  id: string;
+  eventType: 'login' | 'logout' | 'sos_activated' | 'guardian_added' | 'profile_updated' | 'journey_started' | 'journey_ended';
+  timestamp: string;
+  details: string;
+  userId: string;
+}
+

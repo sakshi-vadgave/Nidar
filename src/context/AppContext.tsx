@@ -20,7 +20,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { auth, db, storage, googleProvider, OperationType, handleFirestoreError } from '../firebase';
-import { UserProfile, Guardian, EmergencyContact, AlertLog, Journey, UserSetting, NotificationItem, EvidenceItem } from '../types';
+import { UserProfile, Guardian, EmergencyContact, AlertLog, Journey, UserSetting, NotificationItem, EvidenceItem, AuditLogItem } from '../types';
 import { reverseGeocodeNominatim } from '../utils/geocoding';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
@@ -61,6 +61,8 @@ interface AppContextType {
   stopJourney: (journeyId: string, success: boolean) => Promise<void>;
   setFakeCallActive: (active: boolean) => void;
   signInWithGuestMock: (guestUser: any) => Promise<void>;
+  auditLogs: AuditLogItem[];
+  addAuditLog: (eventType: AuditLogItem['eventType'], details: string) => Promise<void>;
   
   // Real-time location tracking telemetry
   liveLocation: {
@@ -143,6 +145,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [settings, setSettings] = useState<UserSetting>({
     theme: 'light',
     audioTriggerEnabled: false,
@@ -161,6 +164,38 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('nidar_silent_mode', String(next));
       return next;
     });
+  };
+
+  const addAuditLog = async (eventType: AuditLogItem['eventType'], details: string) => {
+    const currentUid = auth.currentUser?.uid || user?.uid || 'anonymous';
+    const logId = 'log_' + Date.now() + Math.random().toString(36).substring(7);
+    const logPayload = {
+      eventType,
+      timestamp: new Date().toISOString(),
+      details,
+      userId: currentUid,
+    };
+
+    if (currentUid.startsWith('guest_') || currentUid === 'demo-sandbox-user' || currentUid === 'anonymous') {
+      try {
+        const cachedLogs = localStorage.getItem('nidar_guest_audit_logs');
+        const logs = cachedLogs ? JSON.parse(cachedLogs) : [];
+        logs.unshift({ id: logId, ...logPayload });
+        const sliced = logs.slice(0, 100);
+        localStorage.setItem('nidar_guest_audit_logs', JSON.stringify(sliced));
+        setAuditLogs(sliced);
+      } catch (err) {
+        console.warn('Error saving guest audit logs:', err);
+      }
+      return;
+    }
+
+    try {
+      const docRef = doc(db, 'users', currentUid, 'auditLogs', logId);
+      await setDoc(docRef, logPayload);
+    } catch (err) {
+      console.warn('Error recording security audit log to Firestore:', err);
+    }
   };
 
   const [loading, setLoading] = useState(true);
@@ -830,6 +865,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+        if (!sessionStorage.getItem('nidar_session_tracked')) {
+          sessionStorage.setItem('nidar_session_tracked', 'true');
+          setTimeout(() => {
+            addAuditLog('login', `Identity Session started for authenticated account: ${currentUser.email || currentUser.uid}`);
+          }, 1000);
+        }
         // Fetch User Profile
         const profilePath = `users/${currentUser.uid}`;
         try {
@@ -917,6 +958,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         pushNotificationsEnabled: true,
         emergencySOSCountdown: 5,
       });
+
+      const gAuditLogs = localStorage.getItem('nidar_guest_audit_logs');
+      setAuditLogs(gAuditLogs ? JSON.parse(gAuditLogs) : []);
 
       return;
     }
@@ -1023,6 +1067,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       handleFirestoreError(err, OperationType.GET, `users/${user.uid}/evidence`);
     });
 
+    // 8. Audit logs realtime syncing
+    const auditLogsCol = collection(db, 'users', user.uid, 'auditLogs');
+    const qAuditLogs = query(auditLogsCol, orderBy('timestamp', 'desc'));
+    const unsubAuditLogs = onSnapshot(qAuditLogs, (snapshot) => {
+      const list: AuditLogItem[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({ id: docSnap.id, ...docSnap.data() } as AuditLogItem);
+      });
+      setAuditLogs(list);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, `users/${user.uid}/auditLogs`);
+    });
+
     return () => {
       unsubProfile();
       unsubGuardians();
@@ -1032,6 +1089,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       unsubNotifs();
       unsubSettings();
       unsubEvidence();
+      unsubAuditLogs();
     };
   }, [user, needsOnboarding]);
 
@@ -1061,11 +1119,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setNeedsOnboarding(true);
     }
     setLoading(false);
+    sessionStorage.setItem('nidar_session_tracked', 'true');
+    await addAuditLog('login', `Simulated login successful for Guest/Demo user: ${guestUser.uid}`);
   };
 
   const logOut = async () => {
     try {
       setLoading(true);
+      await addAuditLog('logout', `User sequence logged out successfully`);
+      sessionStorage.removeItem('nidar_session_tracked');
       if (user && (user.uid.startsWith('guest_') || user.uid === 'demo-sandbox-user')) {
         localStorage.removeItem('nidar_guest_user');
         setUser(null);
@@ -1129,6 +1191,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       };
       localStorage.setItem('nidar_guest_notifications', JSON.stringify([initialNotif]));
       setNotifications([initialNotif]);
+      await addAuditLog('profile_updated', 'Completed Guest Sandbox onboarding profile setup');
       return;
     }
 
@@ -1163,6 +1226,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       // Send initial welcome notification
       await addNotification('Safety Engine Ready', 'NIDAR Safety setup complete. Your guardians will be alerted on any warning trigger.');
+      await addAuditLog('profile_updated', 'Completed secure registration onboarding profile setup');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -1176,11 +1240,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const updatedProfile = { ...profile, ...data, updatedAt: new Date().toISOString() } as UserProfile;
       localStorage.setItem('nidar_guest_profile', JSON.stringify(updatedProfile));
       setProfile(updatedProfile);
+      await addAuditLog('profile_updated', 'Modified sandbox profile data parameters');
       return;
     }
 
     try {
       await updateDoc(doc(db, 'users', user.uid), { ...data, updatedAt: new Date().toISOString() });
+      await addAuditLog('profile_updated', 'Modified production database secure profile details');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -1190,6 +1256,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const triggerSOS = async (type: string) => {
     if (!user) return;
     const path = `users/${user.uid}/alerts`;
+    await addAuditLog('sos_activated', `SOS Emergency Triggered. Trigger type: ${type}`);
 
     // 1. Start vibration feedback immediately (sub-50ms physical confirmation)
     if (navigator.vibrate) {
@@ -1393,12 +1460,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('nidar_guest_guardians', JSON.stringify(list));
       setGuardians(list);
       await addNotification('Guardian Added', `${guardian.name} is now your secondary protective dynamic contact.`);
+      await addAuditLog('guardian_added', `Simulated dynamic guardian added: ${guardian.name} (${guardian.phone})`);
       return;
     }
 
     try {
       await addDoc(collection(db, 'users', user.uid, 'guardians'), payload);
       await addNotification('Guardian Added', `${guardian.name} is now your secondary protective dynamic contact.`);
+      await addAuditLog('guardian_added', `Dynamic guardian added to secure database: ${guardian.name} (${guardian.phone})`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -1701,12 +1770,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setJourneys(list);
       setActiveJourney(payloadWithId as Journey);
       await addNotification('Journey Initiated', `Now tracking path safety status to ${destinationName}. Safe guardian ping timer activated.`);
+      await addAuditLog('journey_started', `Simulated active safety journey started towards: ${destinationName}`);
       return;
     }
 
     try {
       await addDoc(collection(db, 'users', user.uid, 'journeys'), journeyPayload);
       await addNotification('Journey Initiated', `Now tracking path safety status to ${destinationName}. Safe guardian ping timer activated.`);
+      await addAuditLog('journey_started', `Production active safety journey started towards: ${destinationName}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -1725,6 +1796,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         ? 'Journey completed successfully, tracking stopped.'
         : 'Journey warning flagged! Notification dispatched.';
       await addNotification(success ? 'Journey Safe End' : 'JOURNEY WARNING FLAGS', alertMsg);
+      await addAuditLog('journey_ended', `Simulated safety journey ended. Arrived safely: ${success}`);
       return;
     }
 
@@ -1736,6 +1808,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         ? 'Journey completed successfully, tracking stopped.'
         : 'Journey warning flagged! Notification dispatched.';
       await addNotification(success ? 'Journey Safe End' : 'JOURNEY WARNING FLAGS', alertMsg);
+      await addAuditLog('journey_ended', `Production safety journey ended. Arrived safely: ${success}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -1787,6 +1860,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         stopJourney,
         setFakeCallActive,
         signInWithGuestMock,
+        auditLogs,
+        addAuditLog,
         
         // Real-time location tracking telemetry and path simulation exports
         liveLocation,

@@ -32,6 +32,7 @@ import {
 import FakeCallOverlay from '../components/FakeCallOverlay';
 import EvidenceCapture from '../components/EvidenceCapture';
 import SafetyChatbot from '../components/SafetyChatbot';
+import VoiceSOSModal from '../components/VoiceSOSModal';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
@@ -68,6 +69,9 @@ export default function Dashboard() {
 
   // Emergency Siren local status
   const [sirenActive, setSirenActive] = useState(false);
+
+  // Active Voice SOS interactive listening modal trigger
+  const [isVoiceSOSModalOpen, setIsVoiceSOSModalOpen] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -267,7 +271,7 @@ export default function Dashboard() {
         setFakeCallActive(true);
         break;
       case 'voice_sos':
-        navigate('/tools');
+        setIsVoiceSOSModalOpen(true);
         break;
       case 'siren_deterrent':
         if (sirenActive) {
@@ -1094,6 +1098,12 @@ export default function Dashboard() {
         onClose={() => setFakeCallActive(false)}
         callerName={callerName}
         callerNumber={callerNumber}
+      />
+
+      {/* Voice SOS Listening Modal overlay */}
+      <VoiceSOSModal
+        isOpen={isVoiceSOSModalOpen}
+        onClose={() => setIsVoiceSOSModalOpen(false)}
       />
 
       {/* Floating AI Safety Assistant Chatbot */}

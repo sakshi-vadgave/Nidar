@@ -34,6 +34,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { db, auth, OperationType, handleFirestoreError } from '../firebase';
+import VideoPlayerModal, { getYouTubeId } from '../components/VideoPlayerModal';
 import {
   doc,
   setDoc,
@@ -92,6 +93,9 @@ export default function Fearless() {
   // Article Modal State
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
 
+  // Playing Video Modal State
+  const [activePlayingVideo, setActivePlayingVideo] = useState<FearlessVideo | null>(null);
+
   // Active sub-tab inside Learn Center
   const [learnTab, setLearnTab] = useState<'videos' | 'articles' | 'tips' | 'resources'>('videos');
   // Video filter category
@@ -132,7 +136,7 @@ export default function Fearless() {
       title: '5 Crucial Self-Defense Strikes for Women',
       category: 'Self Defense',
       description: 'Master powerful and intuitive escape strikes including palm strikes, heel kicks, and hammer fists.',
-      url: 'https://www.youtube.com/embed/k9Jn0OAbF6M'
+      url: 'https://youtu.be/KVpxP3ZZtAc?si=Hgleo2cFmCuzGhl6'
     },
     {
       id: 'vid_2',
@@ -1242,10 +1246,16 @@ export default function Fearless() {
                               <div className="relative md:w-44 h-28 bg-[#0F172A] rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden mb-3.5 md:mb-0 border border-slate-200">
                                 <div className="absolute inset-0 bg-gradient-to-tr from-indigo-900/50 to-rose-950/20" />
                                 <div className="relative text-white z-10 flex flex-col items-center">
-                                  <div className="w-10 h-10 rounded-full bg-[#FF5A7A] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center shadow-lg cursor-pointer">
-                                    <Play className="w-4 h-4 fill-white text-[#FF5A7A] translate-x-0.5" />
+                                  <div 
+                                    onClick={() => {
+                                      setActivePlayingVideo(video);
+                                      handleWatchVideoState(video.id);
+                                    }}
+                                    className="w-10 h-10 rounded-full bg-[#FF5A7A] hover:scale-105 active:scale-95 transition-transform flex items-center justify-center shadow-lg cursor-pointer"
+                                  >
+                                    <Play className="w-4 h-4 fill-white text-white translate-x-0.5" />
                                   </div>
-                                  <span className="text-[9px] font-bold text-slate-350 tracking-wider mt-1.5 uppercase font-mono uppercase bg-slate-900/70 py-0.5 px-2 rounded-md">
+                                  <span className="text-[9px] font-bold text-slate-350 tracking-wider mt-1.5 uppercase font-mono bg-slate-900/70 py-0.5 px-2 rounded-md">
                                     YouTube Embed
                                   </span>
                                 </div>
@@ -1289,16 +1299,16 @@ export default function Fearless() {
                                   </div>
 
                                   <div className="flex space-x-2">
-                                    <a
-                                      href={video.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      onClick={() => handleWatchVideoState(video.id)}
-                                      className="px-3 py-1.5 rounded-xl text-[11px] font-extrabold bg-slate-900 hover:bg-slate-800 text-white transition-all shadow-sm flex items-center space-x-1"
+                                    <button
+                                      onClick={() => {
+                                        setActivePlayingVideo(video);
+                                        handleWatchVideoState(video.id);
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl text-[11px] font-extrabold bg-[#FF5A7A] hover:bg-[#ff446b] text-white transition-all shadow-sm flex items-center space-x-1"
                                     >
-                                      <span>Watch</span>
-                                      <ExternalLink className="w-3 h-3" />
-                                    </a>
+                                      <span>Watch video</span>
+                                      <Play className="w-3 h-3 fill-white text-white" />
+                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -1627,6 +1637,13 @@ export default function Fearless() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Embedded Video Player Modal overlay */}
+      <VideoPlayerModal
+        isOpen={activePlayingVideo !== null}
+        onClose={() => setActivePlayingVideo(null)}
+        video={activePlayingVideo}
+      />
     </div>
   );
 }

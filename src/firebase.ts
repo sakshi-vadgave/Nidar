@@ -5,14 +5,46 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { 
+  initializeFirestore, 
+  getFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager, 
+  doc, 
+  getDocFromServer 
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Initialize Firestore with robust connectivity options and fallback mechanisms
+let firestoreDb;
+try {
+  firestoreDb = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, firebaseConfig.firestoreDatabaseId);
+  console.log('Firebase Firestore initialized with offline persistent cache & experimentalForceLongPolling.');
+} catch (cacheError) {
+  console.warn('Failed to initialize Firestore with persistent local cache (possible iframe sandbox restriction):', cacheError);
+  try {
+    // Fallback to standard initialization with long-polling
+    firestoreDb = initializeFirestore(app, {
+      experimentalForceLongPolling: true
+    }, firebaseConfig.firestoreDatabaseId);
+    console.log('Firebase Firestore fell back to standard initialization with experimentalForceLongPolling.');
+  } catch (fallbackError) {
+    console.warn('Failed to initialize Firestore with long-polling:', fallbackError);
+    firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+}
+
+export const db = firestoreDb;
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 

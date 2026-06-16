@@ -176,6 +176,43 @@ service cloud.firestore {
         allow create, update: if isOwner(userId) && isValidId(stateId) && isValidFearlessState(request.resource.data);
         allow delete: if isOwner(userId);
       }
+
+      // Append-only immutable Audit log subcollection
+      match /auditLogs/{logId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(logId);
+        allow update, delete: if false; 
+      }
+    }
+
+    // Root-level database collections supporting flat-collection layout with strong UID link validations
+    match /guardians/{guardianId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(guardianId) && (request.resource.data.userId == request.auth.uid || request.resource.data.uid == request.auth.uid);
+      allow update: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.uid == request.auth.uid) && (request.resource.data.userId == request.auth.uid || request.resource.data.uid == request.auth.uid);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.uid == request.auth.uid);
+    }
+
+    match /journeys/{journeyId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(journeyId) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /alerts/{alertId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(alertId) && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /settings/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /notifications/{uid} {
+      allow read, write: if isOwner(uid);
     }
   }
 }
